@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MacroPad Agent",
+  "mainBinaryName": "macropad-agent-desktop",
+  "version": "0.1.0",
+  "identifier": "com.macropad-agent.desktop",
+  "build": {
+    "frontendDist": "ui",
+    "beforeBundleCommand": "sh ../installers/linux/deb/prepare.sh"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "MacroPad Agent",
+        "width": 1040,
+        "height": 720,
+        "minWidth": 820,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb"],
+    "category": "Utility",
+    "shortDescription": "Programa el macro pad USB 1189:8890 según el sistema operativo",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [],
+    "linux": {
+      "deb": {
+        "depends": ["libusb-1.0-0"],
+        "files": {
+          "/usr/bin/macropad-agent": "../../target/release/macropad-agent",
+          "/usr/lib/macropad-agent/ch57x-keyboard-tool": "../../target/release/ch57x-keyboard-tool",
+          "/usr/lib/udev/rules.d/70-macropad-agent.rules": "../../installers/linux/70-macropad-agent.rules",
+          "/usr/lib/systemd/user/macropad-agent.service": "../../installers/linux/deb/macropad-agent.service",
+          "/usr/share/doc/macropad-agent/instalacion-local.md": "../../docs/instalacion-local.md"
+        },
+        "postInstallScript": "../../installers/linux/deb/postinst.sh",
+        "postRemoveScript": "../../installers/linux/deb/postrm.sh"
+      }
+    }
+  }
+}

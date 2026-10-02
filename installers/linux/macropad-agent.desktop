@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=MacroPad Agent
+Comment=Configura el macro pad USB 1189:8890
+Exec=macropad-agent-desktop
+Icon=macropad-agent
+StartupWMClass=macropad-agent-desktop
+Categories=Settings;HardwareSettings;
+Terminal=false

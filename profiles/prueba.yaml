@@ -1,0 +1,13 @@
+# Perfil mínimo para diagnóstico: cada tecla escribe su número.
+name: Prueba de hardware
+platform: any
+bindings:
+  key_1: "1"
+  key_2: "2"
+  key_3: "3"
+  key_4: "4"
+  key_5: "5"
+  key_6: "6"
+  knob_left: volume_down
+  knob_right: volume_up
+  knob_press: mute

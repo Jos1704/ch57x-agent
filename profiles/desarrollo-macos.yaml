@@ -1,0 +1,12 @@
+name: Desarrollo macOS
+platform: macos
+bindings:
+  key_1: guardar           # cmd-s
+  key_2: deshacer          # cmd-z
+  key_3: rehacer           # cmd-shift-z
+  key_4: abrir-archivo     # cmd-p
+  key_5: paleta-comandos   # cmd-shift-p
+  key_6: ejecutar          # f5
+  knob_left: volume_down
+  knob_right: volume_up
+  knob_press: mute

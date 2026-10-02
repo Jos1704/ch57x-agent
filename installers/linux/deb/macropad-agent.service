@@ -1,0 +1,11 @@
+[Unit]
+Description=MacroPad Agent: programa el macro pad USB 1189:8890 al conectarlo
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/macropad-agent run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

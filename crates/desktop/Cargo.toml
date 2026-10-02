@@ -1,0 +1,20 @@
+[package]
+name = "macropad-agent-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ventana de configuración de MacroPad Agent"
+
+[[bin]]
+name = "macropad-agent-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+macropad-core = { path = "../core" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }

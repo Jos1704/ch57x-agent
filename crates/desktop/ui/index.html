@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MacroPad Agent</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="5" height="5" rx="1"/><rect x="8" y="6" width="5" height="5" rx="1"/><rect x="2" y="12" width="5" height="5" rx="1"/><rect x="8" y="12" width="5" height="5" rx="1"/><circle cx="18.5" cy="11.5" r="3.5" fill="none" stroke-width="2"/></svg>
+      <span>MacroPad Agent</span>
+    </div>
+    <div class="status" id="status">
+      <span class="pill" id="st-device">Macro pad…</span>
+      <span class="pill" id="st-agent">Agente…</span>
+      <span class="pill muted" id="st-last">Último aplicado…</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="side-head">
+        <h2>Perfiles</h2>
+        <button class="ghost small" id="btn-new" title="Crear un perfil a partir del actual">+ Nuevo</button>
+      </div>
+      <form class="new-form hidden" id="new-form">
+        <label>Identificador<input id="new-id" placeholder="mi-perfil" pattern="[A-Za-z0-9_-]+" required></label>
+        <label>Nombre<input id="new-name" placeholder="Mi perfil" required></label>
+        <div class="row">
+          <button type="submit" class="primary small">Crear copia</button>
+          <button type="button" class="ghost small" id="new-cancel">Cancelar</button>
+        </div>
+      </form>
+      <ul class="profiles" id="profiles"></ul>
+      <nav class="tabs">
+        <button class="tab active" data-tab="editor">Editor</button>
+        <button class="tab" data-tab="diagnose">Diagnóstico</button>
+      </nav>
+    </aside>
+
+    <main>
+      <section id="tab-editor" class="tab-panel">
+        <div class="profile-head">
+          <div class="field grow">
+            <label for="p-name">Nombre</label>
+            <input id="p-name">
+          </div>
+          <div class="field">
+            <label for="p-platform">Sistema</label>
+            <select id="p-platform">
+              <option value="linux">Linux</option>
+              <option value="macos">macOS</option>
+              <option value="any">Cualquiera</option>
+            </select>
+          </div>
+          <div class="field id-field">
+            <label>Identificador</label>
+            <code id="p-id">—</code>
+          </div>
+        </div>
+
+        <div class="pad-wrap">
+          <div class="pad" id="pad">
+            <div class="keys" id="keys"></div>
+            <div class="knob-area">
+              <button class="knob-slot" data-control="knob_left" title="Girar a la izquierda">
+                <span class="slot-label">↺ izquierda</span><span class="slot-value"></span>
+              </button>
+              <button class="knob" data-control="knob_press" title="Pulsar la perilla">
+                <span class="slot-label">pulsar</span><span class="slot-value"></span>
+              </button>
+              <button class="knob-slot" data-control="knob_right" title="Girar a la derecha">
+                <span class="slot-label">↻ derecha</span><span class="slot-value"></span>
+              </button>
+            </div>
+          </div>
+          <p class="hint">Haz clic en una tecla o en la perilla para cambiar su acción. La fila superior son las teclas 1–3, con la perilla a la derecha.</p>
+        </div>
+
+        <div class="messages" id="messages"></div>
+
+        <div class="actions">
+          <button class="primary" id="btn-save">Guardar</button>
+          <button id="btn-apply">Aplicar ahora</button>
+          <button id="btn-auto">Usar como automático</button>
+          <span class="spacer"></span>
+          <button class="ghost" id="btn-restore">Restaurar perfil de desarrollo</button>
+          <button class="ghost danger" id="btn-delete">Eliminar</button>
+        </div>
+      </section>
+
+      <section id="tab-diagnose" class="tab-panel hidden">
+        <div class="diag-head">
+          <h2>Diagnóstico</h2>
+          <div class="row">
+            <button id="btn-diag">Volver a revisar</button>
+            <button id="btn-copy">Copiar</button>
+            <button id="btn-agent">Reiniciar agente</button>
+          </div>
+        </div>
+        <div id="diag-checks" class="checks"></div>
+        <h3>Historial</h3>
+        <table class="history">
+          <thead><tr><th></th><th>Fecha</th><th>Perfil</th><th>Origen</th><th>Resultado</th></tr></thead>
+          <tbody id="diag-history"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <aside class="editor hidden" id="editor">
+      <div class="editor-head">
+        <div>
+          <div class="eyebrow" id="ed-eyebrow">Control</div>
+          <h2 id="ed-title">Tecla 1</h2>
+        </div>
+        <button class="ghost small" id="ed-close" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="current">Actual: <code id="ed-current">—</code> <span id="ed-resolved" class="muted"></span></div>
+
+      <div class="subtabs" id="ed-tabs">
+        <button class="subtab active" data-sub="common">Acciones</button>
+        <button class="subtab" data-sub="combo">Combinación</button>
+        <button class="subtab" data-sub="media">Multimedia</button>
+        <button class="subtab" data-sub="raw">Directo</button>
+      </div>
+
+      <div class="sub" data-sub="common" id="ed-common"></div>
+
+      <div class="sub hidden" data-sub="combo">
+        <div class="mods" id="ed-mods"></div>
+        <label class="field">Tecla
+          <select id="ed-key"></select>
+        </label>
+        <div class="combo-preview">Resultado: <code id="ed-combo">—</code></div>
+        <button class="primary" id="ed-combo-use">Usar combinación</button>
+      </div>
+
+      <div class="sub hidden" data-sub="media">
+        <p class="hint">Las teclas multimedia no se pueden combinar con modificadores.</p>
+        <div class="chips" id="ed-media"></div>
+      </div>
+
+      <div class="sub hidden" data-sub="raw">
+        <p class="hint">Cualquier valor de <code>ch57x-keyboard-tool show-keys</code>, por ejemplo <code>ctrl-alt-t</code>, <code>f13</code> o una secuencia <code>ctrl-k,ctrl-c</code> (hasta 5 pasos).</p>
+        <input id="ed-raw" placeholder="ctrl-alt-t">
+        <button class="primary" id="ed-raw-use">Usar valor</button>
+      </div>
+
+      <button class="ghost danger small" id="ed-clear">Quitar asignación</button>
+    </aside>
+  </div>
+
+  <div class="toast hidden" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

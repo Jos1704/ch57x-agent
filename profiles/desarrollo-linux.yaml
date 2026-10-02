@@ -1,0 +1,12 @@
+name: Desarrollo Linux
+platform: linux
+bindings:
+  key_1: guardar           # ctrl-s
+  key_2: deshacer          # ctrl-z
+  key_3: rehacer           # ctrl-shift-z
+  key_4: abrir-archivo     # ctrl-p
+  key_5: paleta-comandos   # ctrl-shift-p
+  key_6: ejecutar          # f5
+  knob_left: volume_down
+  knob_right: volume_up
+  knob_press: mute
