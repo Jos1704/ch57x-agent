@@ -20,8 +20,13 @@ pub struct Found {
 }
 
 impl Found {
+    /// Ubicación legible del dispositivo. En macOS no existe `/dev/bus/usb`.
     pub fn usb_path(&self) -> String {
-        format!("/dev/bus/usb/{:03}/{:03}", self.bus, self.address)
+        if cfg!(target_os = "linux") {
+            format!("/dev/bus/usb/{:03}/{:03}", self.bus, self.address)
+        } else {
+            format!("USB bus {:03}, dirección {:03}", self.bus, self.address)
+        }
     }
 }
 

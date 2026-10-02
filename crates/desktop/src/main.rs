@@ -248,7 +248,31 @@ fn restart_agent() -> CmdResult<()> {
     service::restart().map_err(err)
 }
 
+/// macOS: si la app está instalada en Aplicaciones, el LaunchAgent apunta al
+/// agente que viene dentro de la `.app`. No hace nada desde el `.dmg` montado,
+/// desde `target/` ni con `cargo run`.
+fn install_bundled_agent() {
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else { return };
+    let user_apps = paths::home_dir().join("Applications");
+    if !(exe.starts_with("/Applications") || exe.starts_with(&user_apps)) {
+        return;
+    }
+    let agent = exe.with_file_name("macropad-agent");
+    if !agent.is_file() {
+        return;
+    }
+    match service::install_launch_agent(&agent) {
+        Ok(true) => eprintln!("LaunchAgent instalado: {}", agent.display()),
+        Ok(false) => {}
+        Err(e) => eprintln!("no se pudo instalar el LaunchAgent: {e:#}"),
+    }
+}
+
 fn main() {
+    std::thread::spawn(install_bundled_agent);
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_status,

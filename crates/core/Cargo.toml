@@ -11,3 +11,8 @@ serde_yaml.workspace = true
 serde_json.workspace = true
 rusb.workspace = true
 humantime.workspace = true
+
+# En macOS se compila libusb desde el código fuente y se enlaza estático, para que
+# la .app no dependa de la libusb de Homebrew (que exige la versión de macOS del equipo).
+[target.'cfg(target_os = "macos")'.dependencies]
+rusb = { workspace = true, features = ["vendored"] }
