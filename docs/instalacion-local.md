@@ -41,9 +41,32 @@ Para ver el registro del agente: `journalctl --user -u macropad-agent -f`.
 
 Para desinstalar: `installers/linux/uninstall.sh`. Tus perfiles y el historial se conservan.
 
-## macOS (aún sin probar)
+## macOS
 
-Sigue [macos-agente.md](macos-agente.md), que explica cómo probar y terminar la versión de macOS paso a paso.
+Probado en macOS 27 (Apple Silicon). No hace falta `sudo` ni conceder permisos para programar el teclado.
+
+### App (`.dmg`)
+
+```bash
+cargo install tauri-cli --version "^2" --locked   # una sola vez
+cd crates/desktop && cargo tauri build --bundles app,dmg
+```
+
+Genera `target/release/bundle/dmg/MacroPad Agent_<versión>_aarch64.dmg`. Arrastra la app a Aplicaciones y ábrela. Al abrirse instala el LaunchAgent, que apunta al agente de dentro de la `.app`. `ch57x-keyboard-tool` y libusb van incluidos, así que no hace falta Homebrew.
+
+La app no está notarizada: la primera vez ábrela con clic derecho → *Abrir*, o ejecuta `xattr -dr com.apple.quarantine "/Applications/MacroPad Agent.app"`.
+
+### Desde el código
+
+```bash
+installers/macos/install.sh
+```
+
+Instala `~/.local/bin/macropad-agent` y el LaunchAgent `com.macropad-agent`. Si `rustup` viene de Homebrew, agrega `/opt/homebrew/opt/rustup/bin` y `~/.cargo/bin` al `PATH`.
+
+Registro del agente: `~/Library/Application Support/MacroPad Agent/agent.log`.
+
+Detalles y pendientes: [macos-agente.md](macos-agente.md).
 
 ## Ventana de configuración
 

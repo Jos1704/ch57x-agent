@@ -6,7 +6,7 @@
   "identifier": "com.macropad-agent.desktop",
   "build": {
     "frontendDist": "ui",
-    "beforeBundleCommand": "sh ../installers/linux/deb/prepare.sh"
+    "beforeBundleCommand": "sh ../installers/common/prepare.sh"
   },
   "app": {
     "withGlobalTauri": true,
@@ -26,7 +26,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb"],
+    "targets": ["deb", "app", "dmg"],
     "category": "Utility",
     "shortDescription": "Programa el macro pad USB 1189:8890 según el sistema operativo",
     "icon": [
@@ -50,6 +50,14 @@
         "postInstallScript": "../../installers/linux/deb/postinst.sh",
         "postRemoveScript": "../../installers/linux/deb/postrm.sh"
       }
+    },
+    "macOS": {
+      "files": {
+        "MacOS/macropad-agent": "../../target/release/macropad-agent",
+        "MacOS/ch57x-keyboard-tool": "../../target/release/ch57x-keyboard-tool"
+      },
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
     }
   }
 }

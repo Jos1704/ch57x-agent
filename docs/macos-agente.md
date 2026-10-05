@@ -6,12 +6,13 @@ Este documento es para quien continúe el trabajo en un Mac, ya sea una persona 
 
 | Pieza | Linux | macOS |
 |---|---|---|
-| Núcleo (`crates/core`): perfiles, acciones, USB, historial | ✅ probado con el teclado real | compila con `cfg!`, **sin probar** |
-| CLI `macropad-agent` (`status`, `apply`, `diagnose`, …) | ✅ probado | **sin probar** |
-| Agente `macropad-agent run` (hotplug con libusb) | ✅ probado: arranque y reconexión | **sin probar** |
-| Inicio automático | ✅ servicio de usuario `systemd` | `installers/macos/install.sh` + LaunchAgent, **sin probar** |
-| Ventana Tauri (`crates/desktop`) | ✅ probada | **sin probar**; falta empaquetar `.app` y `.dmg` |
-| Perfil `desarrollo-macos` (`cmd-…`) | ✅ validado con `ch57x-keyboard-tool validate` | falta probarlo en el teclado |
+| Núcleo (`crates/core`): perfiles, acciones, USB, historial | ✅ probado con el teclado real | ✅ probado con el teclado real (macOS 27, Apple Silicon) |
+| CLI `macropad-agent` (`status`, `apply`, `diagnose`, …) | ✅ probado | ✅ probado, sin `sudo` |
+| Agente `macropad-agent run` (hotplug con libusb) | ✅ probado: arranque y reconexión | ✅ probado: arranque y reconexión |
+| Inicio automático | ✅ servicio de usuario `systemd` | ✅ LaunchAgent (`install.sh` o la `.app`); falta probar cerrar e iniciar sesión |
+| Ventana Tauri (`crates/desktop`) | ✅ probada | ✅ editar, guardar y aplicar; faltan algunos botones (paso 7) |
+| Paquete | ✅ `.deb` | ✅ `.app` y `.dmg` (arm64), sin depender de Homebrew |
+| Perfil `desarrollo-macos` (`cmd-…`) | ✅ validado con `ch57x-keyboard-tool validate` | ✅ probado en el teclado con VS Code |
 
 ### Datos confirmados del hardware (en Linux)
 
@@ -50,6 +51,8 @@ cargo install tauri-cli --version "^2" --locked
 
 **Comprobar:** `cargo test` pasa (9 tests en `macropad-core`) y `cargo build` termina sin advertencias.
 
+> **Resultado (2026-10-02, Apple Silicon):** ✅. Homebrew ya no incluye `rustup-init`: la fórmula instala `rustup` como keg-only en `/opt/homebrew/opt/rustup/bin`. Ejecuta `rustup default stable` y agrega al `PATH` `/opt/homebrew/opt/rustup/bin` y `~/.cargo/bin`.
+
 ### 2. Diagnóstico del hardware
 
 Conecta el macro pad por cable y ejecuta:
@@ -59,6 +62,8 @@ cargo run -p macropad-agent -- diagnose
 ```
 
 **Comprobar:** se detecta el dispositivo `1189:8890` con las mismas 4 interfaces de arriba.
+
+> **Resultado (2026-10-02):** ✅. Se detectan las mismas 4 interfaces, también a través de un hub USB 2.0. El dispositivo no expone nombre de producto (en `ioreg` solo aparece como `IOUSBHostDevice`). `Found::usb_path()` mostraba la ruta de Linux `/dev/bus/usb/…`; en macOS ahora muestra `USB bus N, dirección N`.
 
 ### 3. Permisos de USB en macOS (lo más incierto)
 
@@ -77,6 +82,8 @@ cargo run -p macropad-agent -- diagnose --apply-test
 
 No cambies el protocolo USB: la programación la hace `ch57x-keyboard-tool`.
 
+> **Resultado (2026-10-02, macOS 27):** ✅ **funciona sin `sudo`** y sin conceder permisos en Ajustes del Sistema. `diagnose --apply-test` programó el perfil `prueba` y las teclas escriben 1–6 en orden. La perilla sube y baja el volumen, y al pulsarla silencia. No hizo falta el consejo para `Access::Denied` en `diagnose.rs`.
+
 ### 4. Perfil de desarrollo de macOS
 
 ```bash
@@ -90,6 +97,8 @@ cargo run -p macropad-agent -- apply desarrollo-macos
 - Tecla 4 abre archivo (`Cmd+P`) y tecla 5 abre la paleta (`Cmd+Shift+P`).
 - Tecla 6 envía `F5`. En macOS `F5` puede ser una tecla multimedia del sistema; si pasa, documéntalo.
 - La perilla sube y baja el volumen, y al pulsarla silencia.
+
+> **Resultado (2026-10-02):** ✅ las 6 teclas y la perilla funcionan como se espera en VS Code. `cmd` funciona como Command, y `F5` llega a VS Code sin activar ninguna función del sistema.
 
 Si `cmd` no funciona como Command, revisa `actions.rs`. Las acciones de macOS usan `cmd-…`, que en `ch57x-keyboard-tool` es la tecla GUI izquierda.
 
@@ -105,6 +114,8 @@ cargo run -p macropad-agent -- run
 - Desconecta y conecta el teclado: debe aparecer `conectado: … (connect)` y `perfil «Desarrollo macOS» aplicado`, además de una notificación.
 - `cargo run -p macropad-agent -- history` muestra los intentos.
 
+> **Resultado (2026-10-02):** ✅. El hotplug de libusb funciona en macOS (`escuchando eventos USB (hotplug)`). Al arrancar aplica el perfil (`startup`) y al reconectar también (`connect`). Las notificaciones de `osascript` llegan, y `history` registra todos los intentos.
+
 ### 6. Inicio automático (LaunchAgent)
 
 ```bash
@@ -119,6 +130,8 @@ Instala `~/.local/bin/macropad-agent` y `~/Library/LaunchAgents/com.macropad-age
 - El registro está en `~/Library/Application Support/MacroPad Agent/agent.log`.
 - Cierra sesión y vuelve a entrar: el perfil se aplica solo (trigger `startup`).
 - Las notificaciones funcionan desde el LaunchAgent.
+
+> **Resultado (2026-10-02):** ✅ `launchctl list`, `status` (`Agente: activo`), `agent.log`, la reconexión y `launchctl kickstart -k` funcionan. launchd encuentra `ch57x-keyboard-tool` en `~/.cargo/bin` sin `MACROPAD_CH57X_TOOL`. **Pendiente:** cerrar sesión y volver a entrar.
 
 Si launchd no encuentra `ch57x-keyboard-tool`, define `MACROPAD_CH57X_TOOL` en el plist con `EnvironmentVariables`.
 
@@ -136,6 +149,8 @@ cargo run -p macropad-agent-desktop
 - «Reiniciar agente» funciona; usa `launchctl kickstart`.
 
 Las combinaciones del editor muestran `super` en Linux; en macOS deben decir `cmd`. Revisa `MOD_LABEL` en `crates/desktop/ui/app.js`.
+
+> **Resultado (2026-10-02):** ✅ la ventana abre, edita una tecla, guarda (la copia queda en `profiles/`) y aplica. «Reiniciar agente» usa `launchctl kickstart -k`, que se probó desde la terminal. `MOD_LABEL` ya muestra `cmd` y `opt` en perfiles de macOS. **Pendiente:** probar en la ventana «Usar como automático», «Restaurar perfil de desarrollo», «Copiar» del diagnóstico y «Reiniciar agente».
 
 ### 8. Empaquetar `.app` y `.dmg`
 
@@ -155,7 +170,7 @@ Las combinaciones del editor muestran `super` en Linux; en macOS deben decir `cm
 
    `tool::locate()` ya busca `ch57x-keyboard-tool` junto al ejecutable.
 
-2. `beforeBundleCommand` ejecuta `installers/linux/deb/prepare.sh`. Es POSIX y sirve también en macOS (compila el agente y copia la herramienta a `target/release`). Conviene moverlo a `installers/common/prepare.sh` y actualizar la ruta en `tauri.conf.json`. Recuerda que el comando se ejecuta desde `crates/`.
+2. `beforeBundleCommand` ejecuta `installers/common/prepare.sh`, que compila el agente y copia la herramienta a `target/release`. El comando se ejecuta desde `crates/`.
 
 3. Compila con:
 
@@ -168,6 +183,14 @@ Las combinaciones del editor muestran `super` en Linux; en macOS deben decir `cm
 5. Sin firma de Apple, Gatekeeper bloqueará la app. Para uso personal basta con `xattr -dr com.apple.quarantine "/Applications/MacroPad Agent.app"`, o con abrirla una vez desde *Abrir* en el menú contextual.
 
 **Comprobar:** instala el `.dmg` y arrastra la app a Aplicaciones. Ábrela: el agente queda instalado y el teclado se programa al reconectarlo.
+
+> **Resultado (2026-10-02):** ✅ se generan `MacroPad Agent.app` y `MacroPad Agent_0.1.0_aarch64.dmg`. Cómo quedó cada punto:
+>
+> - **libusb:** la de Homebrew exige la versión de macOS del equipo (`minos 26.0`) y no viene en un Mac sin Homebrew. En macOS se activa `rusb/vendored` (en `crates/core/Cargo.toml`, solo para `target_os = "macos"`), que compila libusb 1.0.27 estática. `prepare.sh` recompila `ch57x-keyboard-tool` igual (`--features rusb/vendored`). Los tres binarios de la `.app` usan solo librerías del sistema y piden macOS 11.0 o posterior.
+> - **Firma:** `"signingIdentity": "-"` firma la `.app` completa ad-hoc. Sin esto, un Mac con Apple Silicon la marca como «dañada». Sigue sin notarizar, así que la primera vez hay que abrirla con *Abrir* o usar `xattr`.
+> - **LaunchAgent:** cada vez que abre, la ventana llama a `service::install_launch_agent`, solo si corre desde `/Applications` o `~/Applications`. Escribe el plist con la plantilla de `installers/macos/` apuntando al agente de la `.app`, y lo recarga solo si cambió. Reemplaza el LaunchAgent de `install.sh`. ✅ probado: el agente arranca desde la `.app` y aplica el perfil al arrancar y al reconectar.
+> - **`.dmg`:** `bundle_dmg.sh` falló una vez sin motivo claro y dejó montado un volumen `rw.*.dmg`. Se arregla con `hdiutil detach` y repitiendo la compilación.
+> - **Solo arm64:** para Mac con Intel haría falta `--target universal-apple-darwin`.
 
 ## Cómo terminar
 

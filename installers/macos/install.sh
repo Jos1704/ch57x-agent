@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Compila e instala MacroPad Agent como LaunchAgent del usuario en macOS.
-# Aún sin probar en un equipo macOS.
+# Probado en macOS 27 (Apple Silicon).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
