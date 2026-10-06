@@ -17,7 +17,7 @@ if command -v omarchy >/dev/null; then
   echo "  Si no aparece en el lanzador de Omarchy, ejecuta: omarchy restart shell"
 fi
 
-if [[ ! -f /etc/udev/rules.d/70-macropad-agent.rules && ! -f /usr/lib/udev/rules.d/70-macropad-agent.rules ]]; then
+if ! grep -qs "SUBSYSTEM==\"input\"" /etc/udev/rules.d/70-macropad-agent.rules /usr/lib/udev/rules.d/70-macropad-agent.rules; then
   echo "Instalando regla udev (pedirá tu contraseña)…"
   "$here/install-udev.sh"
 fi

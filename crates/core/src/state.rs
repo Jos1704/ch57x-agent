@@ -63,3 +63,13 @@ pub fn history(n: usize) -> Vec<Record> {
         .take(n)
         .collect()
 }
+
+/// Perfil que tiene el teclado ahora: el último aplicado con éxito o, si
+/// nunca se aplicó ninguno, el automático de este sistema.
+pub fn active_profile() -> String {
+    last_applied().map(|r| r.profile).unwrap_or_else(|| {
+        crate::settings::Settings::load()
+            .map(|s| s.auto_profile_for(crate::Platform::current()).to_string())
+            .unwrap_or_else(|_| crate::settings::AutoProfile::default().linux)
+    })
+}

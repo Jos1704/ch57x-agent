@@ -1,3 +1,5 @@
-# MacroPad Agent: permite al usuario con sesión activa programar el macro pad 1189:8890.
+# MacroPad Agent: permite al usuario con sesión activa programar el macro pad 1189:8890
+# y leer sus teclas (para los comandos y flujos). No afecta a otros teclados.
 # Prefijo 70: debe ejecutarse antes de 73-seat-late.rules para que "uaccess" tenga efecto.
 SUBSYSTEM=="usb", ATTR{idVendor}=="1189", ATTR{idProduct}=="8890", TAG+="uaccess"
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="1189", ATTRS{idProduct}=="8890", TAG+="uaccess"

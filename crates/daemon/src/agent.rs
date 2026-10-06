@@ -1,16 +1,20 @@
-//! Proceso en segundo plano: espera la conexión del macro pad y aplica el
-//! perfil del sistema operativo.
+//! Proceso en segundo plano: espera la conexión del macro pad, aplica el
+//! perfil del sistema operativo y ejecuta los comandos y flujos de sus teclas.
 
+use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result};
 use macropad_core::device::{self, Found};
 use macropad_core::settings::Settings;
-use macropad_core::{Platform, Trigger};
+use macropad_core::{input, runs, state, Platform, Profile, Trigger};
 use rusb::{Context, Device, Hotplug, HotplugBuilder, UsbContext};
 
+use crate::exec::Executor;
 use crate::notify;
 
 const RETRIES: u32 = 3;
@@ -21,6 +25,8 @@ const DEDUP_WINDOW: Duration = Duration::from_secs(5);
 enum Event {
     Arrived(Found, Trigger),
     Left(Found),
+    /// Tecla reservada pulsada en el pad.
+    Key(&'static str),
 }
 
 struct Watcher(Sender<Event>);
@@ -75,8 +81,56 @@ pub fn run() -> Result<()> {
         let _ = tx.send(Event::Arrived(dev, Trigger::Startup));
     }
 
-    handle_events(rx, settings, platform);
+    // Las teclas del pad llegan por su propio canal y se reenvían como eventos.
+    let (key_tx, key_rx) = mpsc::channel::<&'static str>();
+    let forward = tx.clone();
+    thread::spawn(move || {
+        for control in key_rx {
+            if forward.send(Event::Key(control)).is_err() {
+                break;
+            }
+        }
+    });
+
+    handle_events(rx, settings, platform, Listeners { tx: key_tx, active: Default::default() });
     Ok(())
+}
+
+/// Hilos que leen los dispositivos de entrada del pad, uno por dispositivo.
+struct Listeners {
+    tx: Sender<&'static str>,
+    active: Arc<Mutex<HashSet<PathBuf>>>,
+}
+
+impl Listeners {
+    fn start(&self) {
+        let devices = input::devices();
+        if devices.is_empty() {
+            if input::access() == input::Access::Unsupported {
+                eprintln!("aviso: en este sistema aún no se escuchan las teclas del pad (comandos desactivados)");
+            }
+            return;
+        }
+        for path in devices {
+            if !self.active.lock().unwrap().insert(path.clone()) {
+                continue;
+            }
+            match input::listen(path.clone(), self.tx.clone()) {
+                Ok(handle) => {
+                    eprintln!("escuchando teclas en {}", path.display());
+                    let active = self.active.clone();
+                    thread::spawn(move || {
+                        let _ = handle.join();
+                        active.lock().unwrap().remove(&path);
+                    });
+                }
+                Err(e) => {
+                    self.active.lock().unwrap().remove(&path);
+                    eprintln!("no se pueden leer las teclas de {}: {e} (falta la regla udev con permiso de entrada)", path.display());
+                }
+            }
+        }
+    }
 }
 
 fn spawn_poller(tx: Sender<Event>) {
@@ -96,11 +150,24 @@ fn spawn_poller(tx: Sender<Event>) {
     });
 }
 
-fn handle_events(rx: Receiver<Event>, mut settings: Settings, platform: Platform) {
+fn handle_events(rx: Receiver<Event>, mut settings: Settings, platform: Platform, listeners: Listeners) {
     let mut last: Option<(Found, Instant)> = None;
+    let mut executor = Executor::default();
     for event in rx {
         match event {
             Event::Left(dev) => eprintln!("desconectado: {}", dev.usb_path()),
+            Event::Key(control) => {
+                // El perfil se lee en cada pulsación: los cambios guardados desde
+                // la ventana valen sin reiniciar el agente.
+                let id = state::active_profile();
+                match Profile::load(&id) {
+                    Ok((profile, _)) => match profile.bindings.get(control).filter(|b| b.is_automation()) {
+                        Some(binding) => executor.trigger(&id, control, binding, "tecla"),
+                        None => eprintln!("{control}: sin comando en «{id}»; aplica el perfil para actualizar el teclado"),
+                    },
+                    Err(e) => eprintln!("{control}: no se pudo leer el perfil «{id}»: {e:#}"),
+                }
+            }
             Event::Arrived(dev, trigger) => {
                 if let Some((prev, at)) = &last
                     && *prev == dev
@@ -116,18 +183,32 @@ fn handle_events(rx: Receiver<Event>, mut settings: Settings, platform: Platform
                 }
                 thread::sleep(Duration::from_millis(settings.settle_delay_ms));
                 let profile = settings.auto_profile_for(platform).to_string();
-                apply_with_retry(&dev, &settings, platform, &profile, trigger);
+                let applied = apply_with_retry(&dev, &settings, platform, &profile, trigger);
                 last = Some((dev, Instant::now()));
+                listeners.start();
+                if applied {
+                    run_on_connect(&mut executor, &profile);
+                }
             }
         }
     }
 }
 
-fn apply_with_retry(dev: &Found, settings: &Settings, platform: Platform, profile: &str, trigger: Trigger) {
+/// Flujos marcados para correr al conectar el pad, una vez al día.
+fn run_on_connect(executor: &mut Executor, id: &str) {
+    let Ok((profile, _)) = Profile::load(id) else { return };
+    for (control, binding) in profile.bindings.automations() {
+        if binding.on_connect() && runs::claim_on_connect(id, control) {
+            executor.trigger(id, control, binding, "conexión");
+        }
+    }
+}
+
+fn apply_with_retry(dev: &Found, settings: &Settings, platform: Platform, profile: &str, trigger: Trigger) -> bool {
     for attempt in 1..=RETRIES {
         if !device::find().map(|f| f.contains(dev)).unwrap_or(false) {
             eprintln!("el dispositivo se desconectó antes de programarlo");
-            return;
+            return false;
         }
         match macropad_core::apply_profile(profile, platform, trigger) {
             Ok(outcome) => {
@@ -138,7 +219,7 @@ fn apply_with_retry(dev: &Found, settings: &Settings, platform: Platform, profil
                 if settings.notifications {
                     notify::send("MacroPad Agent", &format!("Perfil «{}» aplicado", outcome.profile_name));
                 }
-                return;
+                return true;
             }
             Err(e) if attempt < RETRIES => {
                 eprintln!("intento {attempt} falló: {e:#}; reintentando");
@@ -152,4 +233,5 @@ fn apply_with_retry(dev: &Found, settings: &Settings, platform: Platform, profil
             }
         }
     }
+    false
 }

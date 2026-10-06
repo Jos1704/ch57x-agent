@@ -1,0 +1,231 @@
+# Biblioteca de comandos y flujos preconfigurados.
+# `needs`: datos que se piden al usarla. `key: cwd` es la carpeta de trabajo;
+# cualquier otra clave se guarda como variable de entorno ($CLAVE).
+
+# ---------- Flujos de trabajo ----------
+
+- id: empezar-a-trabajar
+  category: flujos
+  title: Empezar a trabajar
+  description: Abre dos terminales y el editor en tu proyecto, levanta los servicios y abre la app local.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+    - { key: PUERTO, label: Puerto de la app local, default: "3000" }
+  binding:
+    label: Empezar a trabajar
+    flow:
+      - { label: Terminal 1, terminal: "" }
+      - { label: Terminal 2, terminal: "" }
+      - { label: Editor, run: "code .", detach: true }
+      - { label: Servicios, run: "docker compose up -d" }
+      - { label: Navegador, open: "http://localhost:$PUERTO", delay_ms: 1500 }
+
+- id: modo-enfoque
+  category: flujos
+  title: Modo enfoque
+  description: Silencia las notificaciones, cierra el chat y abre tu música.
+  platforms: [linux]
+  needs:
+    - { key: LISTA, label: Enlace de tu lista de música, default: "https://music.youtube.com" }
+  binding:
+    label: Modo enfoque
+    flow:
+      - label: Silenciar notificaciones
+        run: 'if command -v omarchy >/dev/null; then omarchy toggle notification silencing; elif command -v gsettings >/dev/null; then gsettings set org.gnome.desktop.notifications show-banners false; fi'
+      - { label: Cerrar chat, run: "pkill -x Discord; pkill -x slack; true" }
+      - { label: Música, open: "$LISTA" }
+
+- id: modo-enfoque-mac
+  category: flujos
+  title: Modo enfoque
+  description: Cierra el chat y abre tu música. Activa «No molestar» desde el Centro de control.
+  platforms: [macos]
+  needs:
+    - { key: LISTA, label: Enlace de tu lista de música, default: "https://music.youtube.com" }
+  binding:
+    label: Modo enfoque
+    flow:
+      - { label: Cerrar chat, run: "osascript -e 'quit app \"Discord\"' -e 'quit app \"Slack\"'; true" }
+      - { label: Música, open: "$LISTA" }
+
+- id: terminar-el-dia
+  category: flujos
+  title: Terminar el día
+  description: Te avisa de cambios sin guardar en git, detiene los servicios del proyecto y bloquea la pantalla.
+  platforms: [linux]
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+    - { key: PROYECTOS, label: Carpeta con todos tus proyectos, kind: folder, default: "~/Projects" }
+  binding:
+    label: Terminar el día
+    flow:
+      - label: Cambios sin guardar
+        run: 'for d in "$PROYECTOS"/*/; do [ -d "$d.git" ] && [ -n "$(git -C "$d" status --porcelain)" ] && echo "Sin guardar: $(basename "$d")"; done; true'
+      - { label: Detener servicios, run: "docker compose down" }
+      - { label: Bloquear, run: "loginctl lock-session" }
+
+- id: terminar-el-dia-mac
+  category: flujos
+  title: Terminar el día
+  description: Te avisa de cambios sin guardar en git, detiene los servicios del proyecto y apaga la pantalla.
+  platforms: [macos]
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+    - { key: PROYECTOS, label: Carpeta con todos tus proyectos, kind: folder, default: "~/Projects" }
+  binding:
+    label: Terminar el día
+    flow:
+      - label: Cambios sin guardar
+        run: 'for d in "$PROYECTOS"/*/; do [ -d "$d.git" ] && [ -n "$(git -C "$d" status --porcelain)" ] && echo "Sin guardar: $(basename "$d")"; done; true'
+      - { label: Detener servicios, run: "docker compose down" }
+      - { label: Apagar pantalla, run: "pmset displaysleepnow" }
+
+- id: entrar-a-reunion
+  category: flujos
+  title: Entrar a una reunión
+  description: Pausa la música y abre tu sala de reuniones.
+  needs:
+    - { key: SALA, label: Enlace de tu sala, default: "https://meet.google.com/" }
+  binding:
+    label: Entrar a una reunión
+    flow:
+      - { label: Pausar música, run: "playerctl pause 2>/dev/null; osascript -e 'tell application \"Music\" to pause' 2>/dev/null; true" }
+      - { label: Abrir sala, open: "$SALA" }
+
+# ---------- Desplegar ----------
+
+- id: desplegar-staging
+  category: desplegar
+  title: Desplegar a staging
+  description: Ejecuta tu script de despliegue y te avisa al terminar.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Desplegar a staging
+    command: ./deploy.sh staging
+
+- id: desplegar-produccion
+  category: desplegar
+  title: Desplegar a producción
+  description: Hay que pulsar la tecla dos veces en 3 segundos, para evitar despliegues por accidente.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Desplegar a producción
+    command: ./deploy.sh production
+    confirm: true
+
+- id: ver-logs
+  category: desplegar
+  title: Ver logs en vivo
+  description: Abre una terminal siguiendo los logs de tus servicios.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Ver logs
+    command: docker compose logs -f --tail=100
+    terminal: true
+
+- id: reiniciar-servicios
+  category: desplegar
+  title: Reiniciar servicios
+  description: Reinicia los contenedores del proyecto sin abrir la terminal.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Reiniciar servicios
+    command: docker compose restart
+
+# ---------- Desarrollo ----------
+
+- id: correr-pruebas
+  category: desarrollo
+  title: Correr pruebas
+  description: Abre una terminal con las pruebas del proyecto. Cambia el comando por el de tu proyecto (npm test, pytest…).
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Pruebas
+    command: cargo test
+    terminal: true
+
+- id: servidor-local
+  category: desarrollo
+  title: Servidor local
+  description: Abre una terminal con el servidor de desarrollo.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Servidor local
+    command: npm run dev
+    terminal: true
+
+- id: abrir-pr
+  category: desarrollo
+  title: Abrir pull request
+  description: Abre en el navegador el formulario para crear el pull request de la rama actual.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Abrir PR
+    command: gh pr create --web
+
+- id: actualizar-repos
+  category: desarrollo
+  title: Actualizar repositorios
+  description: Hace git pull en cada proyecto de la carpeta y te avisa cuáles fallaron.
+  needs:
+    - { key: cwd, label: Carpeta con todos tus proyectos, kind: folder, default: "~/Projects" }
+  binding:
+    label: Actualizar repos
+    command: 'for d in */; do [ -d "$d.git" ] && { git -C "$d" pull --ff-only -q && echo "✓ $d" || echo "✗ $d"; }; done'
+
+# ---------- Sistema ----------
+
+- id: navegador
+  category: sistema
+  title: Abrir el navegador
+  needs:
+    - { key: PAGINA, label: Página que se abre, default: "https://duckduckgo.com" }
+  binding:
+    label: Navegador
+    flow:
+      - { label: Abrir página, open: "$PAGINA" }
+
+- id: captura
+  category: sistema
+  title: Captura de pantalla
+  description: Usa la herramienta de captura de tu escritorio (Omarchy, GNOME o KDE).
+  platforms: [linux]
+  binding:
+    label: Captura
+    notify: false
+    command: 'if command -v omarchy >/dev/null; then omarchy capture screenshot; elif command -v gnome-screenshot >/dev/null; then gnome-screenshot -i; elif command -v spectacle >/dev/null; then spectacle -r; else echo "No se encontró una herramienta de captura" >&2; exit 1; fi'
+
+- id: captura-mac
+  category: sistema
+  title: Captura de pantalla
+  platforms: [macos]
+  binding: { label: Captura, command: screencapture -i -c, notify: false }
+
+- id: bloquear
+  category: sistema
+  title: Bloquear pantalla
+  platforms: [linux]
+  binding: { label: Bloquear, command: loginctl lock-session, notify: false }
+
+- id: bloquear-mac
+  category: sistema
+  title: Apagar la pantalla
+  platforms: [macos]
+  binding: { label: Apagar pantalla, command: pmset displaysleepnow, notify: false }
+
+- id: terminal-aqui
+  category: sistema
+  title: Terminal en una carpeta
+  needs:
+    - { key: cwd, label: Carpeta, kind: folder, default: "~" }
+  binding:
+    label: Terminal
+    flow:
+      - { terminal: "" }

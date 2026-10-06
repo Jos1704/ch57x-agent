@@ -117,6 +117,20 @@ pub fn run() -> Report {
         }
     }
 
+    const KEYS: &str = "Comandos y flujos";
+    match crate::input::access() {
+        crate::input::Access::Ok => push(KEYS, Level::Ok, format!(
+            "el agente puede leer las teclas del pad ({} dispositivos)", crate::input::devices().len()
+        )),
+        crate::input::Access::Denied => push(KEYS, Level::Error, if crate::input::udev_rule_current() {
+            "sin permiso para leer las teclas del pad; desconecta y vuelve a conectar el pad".into()
+        } else {
+            "sin permiso para leer las teclas del pad; actualiza la regla udev (installers/linux/install-udev.sh o «Dar permiso» en la ventana)".into()
+        }),
+        crate::input::Access::NoDevice => push(KEYS, Level::Info, "conecta el pad para comprobar el permiso de las teclas".into()),
+        crate::input::Access::Unsupported => push(KEYS, Level::Info, "este sistema aún no escucha las teclas del pad".into()),
+    }
+
     const PROF: &str = "Perfiles";
     let platform = Platform::current();
     match Settings::load() {
