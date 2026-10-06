@@ -13,6 +13,8 @@ Este documento es para quien continúe el trabajo en un Mac, ya sea una persona 
 | Ventana Tauri (`crates/desktop`) | ✅ probada | ✅ editar, guardar y aplicar; faltan algunos botones (paso 7) |
 | Paquete | ✅ `.deb` | ✅ `.app` y `.dmg` (arm64), sin depender de Homebrew |
 | Perfil `desarrollo-macos` (`cmd-…`) | ✅ validado con `ch57x-keyboard-tool validate` | ✅ probado en el teclado con VS Code |
+| Comandos y flujos: ejecutar («Probar», `macropad-agent ejecutar`) | ✅ probado | escrito con `cfg!` (zsh `-lc`, Terminal.app, `open`), **sin probar** |
+| Comandos y flujos: escuchar las teclas del pad | ✅ evdev, solo el pad | **falta implementar** (paso 9) |
 
 ### Datos confirmados del hardware (en Linux)
 
@@ -35,6 +37,9 @@ Todo lo que cambia entre Linux y macOS está en estos lugares; el resto es comú
 | `crates/core/src/diagnose.rs` | Los mensajes de la regla `udev` solo aparecen en Linux. **Hay que agregar los consejos de permisos de macOS** (ver paso 3). |
 | `crates/daemon/src/notify.rs` | Muestra notificaciones con `osascript -e 'display notification …'`. |
 | `installers/macos/` | `com.macropad-agent.plist` (plantilla) e `install.sh`. |
+| `crates/core/src/automation.rs` | Ejecuta con `$SHELL -lc` (launchd tiene un `PATH` mínimo), abre terminales con `osascript` + Terminal.app y enlaces con `open`. |
+| `crates/core/src/input.rs` | En macOS `access()` devuelve `Unsupported` y `listen()` falla: **es lo que falta** (paso 9). |
+| `crates/core/templates/biblioteca.yaml` | Plantillas con `platforms: [macos]` para lo que cambia (captura, pantalla, chat). |
 
 ## Pasos
 
@@ -192,11 +197,29 @@ Las combinaciones del editor muestran `super` en Linux; en macOS deben decir `cm
 > - **`.dmg`:** `bundle_dmg.sh` falló una vez sin motivo claro y dejó montado un volumen `rw.*.dmg`. Se arregla con `hdiutil detach` y repitiendo la compilación.
 > - **Solo arm64:** para Mac con Intel haría falta `--target universal-apple-darwin`.
 
+### 9. Comandos y flujos: escuchar las teclas del pad
+
+En Linux ya funciona: una tecla con comando envía `F13`–`F21` y el agente lee solo los dispositivos del pad. En macOS hay que implementar la escucha en el módulo `imp` para sistemas que no son Linux de `crates/core/src/input.rs`, con la misma interfaz:
+
+- `devices()`: algo que identifique el pad (o una lista con un solo elemento simbólico).
+- `access()`: `Ok`, `Denied` (falta *Monitorización de entrada*) o `NoDevice`.
+- `listen(path, tx)`: un hilo que envía por `tx` el control de cada tecla reservada pulsada (`automation::control_for_keycode` usa códigos de Linux; en macOS conviene una tabla propia por *usage* HID: `F13` = `0x68` … `F19` = `0x6E`, página `0x07`, más Shift para la perilla).
+
+Camino sugerido: `IOHIDManager` filtrado por `VendorID 0x1189` y `ProductID 0x8890`, con un callback de valores de entrada en la página de teclado. Se puede usar FFI directo a IOKit o un crate como `io-kit-sys` y `core-foundation`. Pide el permiso con `IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)` y comprueba con `IOHIDCheckAccess`.
+
+Cosas a verificar:
+
+1. **`F14` y `F15` cambian el brillo en macOS** con teclados externos. Si pasa con el pad, abre el dispositivo con `kIOHIDOptionsTypeSeizeDevice` (el pad deja de enviar *todas* sus teclas al sistema, incluidos los atajos) o cambia el rango de teclas reservadas solo en macOS. Documenta lo que elijas.
+2. Que la ventana deje de mostrar «Este sistema aún no escucha las teclas del pad» (sale de `input::access()`).
+3. Que `diagnose` diga si falta el permiso de *Monitorización de entrada* y cómo darlo.
+4. Prueba completa: asigna «Empezar a trabajar» desde la Biblioteca, guarda (el teclado se reprograma solo), pulsa la tecla y revisa `macropad-agent comandos`.
+5. Que «Probar» abra Terminal.app en la carpeta correcta y que `open` abra los enlaces.
+
 ## Cómo terminar
 
 Considera macOS terminado cuando:
 
-- [ ] Los pasos 1 a 8 funcionan y quedan anotadas las sorpresas (sobre todo permisos y `F5`).
+- [ ] Los pasos 1 a 9 funcionan y quedan anotadas las sorpresas (sobre todo permisos, `F5` y `F14`/`F15`).
 - [ ] `cargo test` y `cargo clippy --workspace` siguen limpios en macOS.
 - [ ] En Linux sigue todo igual. Todo lo nuevo de macOS va con `cfg!(target_os = "macos")`; no se cambia el comportamiento de Linux.
 - [ ] `docs/instalacion-local.md` y la tabla de estado de este documento están al día.

@@ -1,4 +1,5 @@
 mod agent;
+mod exec;
 mod notify;
 
 use anyhow::{bail, Result};
@@ -6,7 +7,8 @@ use clap::{Parser, Subcommand};
 use macropad_core::device::{self, Access};
 use macropad_core::profile::Source;
 use macropad_core::settings::Settings;
-use macropad_core::{actions, paths, service, state, tool, Platform, Profile, Trigger};
+use macropad_core::automation;
+use macropad_core::{actions, paths, runs, service, state, tool, Platform, Profile, Trigger};
 
 /// Agente local que programa el macro pad USB 1189:8890 según el sistema operativo.
 #[derive(Parser)]
@@ -48,6 +50,16 @@ enum Cmd {
         #[arg(short, default_value_t = 10)]
         n: usize,
     },
+    /// Ejecuta el comando o flujo de un control del perfil activo, como si
+    /// se pulsara (key_1…key_6, knob_left, knob_press, knob_right).
+    #[command(name = "ejecutar")]
+    Trigger { control: String },
+    /// Historial de comandos y flujos ejecutados.
+    #[command(name = "comandos")]
+    Commands {
+        #[arg(short, default_value_t = 10)]
+        n: usize,
+    },
     /// Ejecuta el agente: escucha conexiones USB y aplica el perfil automático.
     Run,
 }
@@ -62,6 +74,8 @@ fn main() {
         Cmd::Profiles => profiles(),
         Cmd::Actions => list_actions(),
         Cmd::History { n } => history(n),
+        Cmd::Trigger { control } => trigger(&control),
+        Cmd::Commands { n } => commands(n),
         Cmd::Run => agent::run(),
     };
     if let Err(e) = result {
@@ -123,7 +137,8 @@ fn validate(id: &str, platform: Option<Platform>) -> Result<()> {
     let warnings = profile.validate(target)?;
     println!("{} ({})", profile.name, target.effective());
     for (control, value) in profile.resolved(target) {
-        println!("  {control:<11} {}", value.as_deref().unwrap_or("—"));
+        let name = profile.bindings.get(control).filter(|b| b.is_automation()).map(|b| format!("  ← {}", b.display_name()));
+        println!("  {control:<11} {}{}", value.as_deref().unwrap_or("—"), name.unwrap_or_default());
     }
     for w in &warnings {
         println!("aviso: {w}");
@@ -159,6 +174,40 @@ fn list_actions() -> Result<()> {
         println!("{:<18} {:<14} {:<14} {}", a.id, a.linux, a.macos, a.description);
     }
     println!("\nTambién se acepta cualquier valor de `{} show-keys` (p. ej. ctrl-alt-t).", tool::BINARY);
+    Ok(())
+}
+
+fn trigger(control: &str) -> Result<()> {
+    let id = state::active_profile();
+    let (profile, _) = Profile::load(&id)?;
+    let Some(binding) = profile.bindings.get(control).filter(|b| b.is_automation()) else {
+        bail!("{control} no tiene comando ni flujo en el perfil «{id}»");
+    };
+    let label = binding.display_name();
+    println!("Ejecutando «{label}» ({control}, perfil «{id}»)…");
+    let outcome = automation::run(binding);
+    runs::save(&runs::Run::finished(&id, control, &label, "prueba", &outcome))?;
+    if !outcome.output.is_empty() {
+        println!("{}", outcome.output);
+    }
+    if outcome.ok {
+        println!("✓ terminó en {} ms", outcome.duration_ms);
+        Ok(())
+    } else {
+        bail!("falló{}", outcome.code.map(|c| format!(" con código {c}")).unwrap_or_default())
+    }
+}
+
+fn commands(n: usize) -> Result<()> {
+    for r in runs::history(n) {
+        let mark = match r.result.as_str() {
+            "ok" => "✓",
+            "ignorada" => "–",
+            _ => "✗",
+        };
+        let detail = r.output.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+        println!("{mark} {} {:<10} {:<22} {:<9} {:>6} ms  {detail}", r.timestamp, r.control, r.label, r.trigger, r.duration_ms);
+    }
     Ok(())
 }
 

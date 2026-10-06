@@ -7,7 +7,12 @@ use macropad_core::actions::{self, Category};
 use macropad_core::device::{self, Access};
 use macropad_core::profile::Source;
 use macropad_core::settings::Settings;
-use macropad_core::{diagnose, paths, service, state, tool, Platform, Profile, Trigger};
+use std::collections::BTreeMap;
+
+use macropad_core::automation::{self, Binding};
+use macropad_core::library::{self, Template};
+use macropad_core::runs::{self, Run};
+use macropad_core::{diagnose, input, paths, service, state, tool, Platform, Profile, Trigger};
 use serde::Serialize;
 
 /// Los errores llegan a la interfaz como texto.
@@ -29,6 +34,12 @@ struct Status {
     last_failure: Option<state::Record>,
     agent_active: Option<bool>,
     config_dir: String,
+    /// Perfil que tiene el teclado ahora.
+    active_profile: String,
+    /// Comandos y flujos del perfil activo.
+    automations: usize,
+    /// Permiso para leer las teclas del pad.
+    input: input::Access,
 }
 
 #[tauri::command(async)]
@@ -53,6 +64,11 @@ fn get_status() -> CmdResult<Status> {
         last_failure: state::history(1).into_iter().find(|r| !r.ok),
         agent_active: service::is_active(),
         config_dir: paths::config_dir().display().to_string(),
+        automations: Profile::load(&state::active_profile())
+            .map(|(p, _)| p.bindings.automations().len())
+            .unwrap_or(0),
+        active_profile: state::active_profile(),
+        input: input::access(),
     })
 }
 
@@ -130,13 +146,34 @@ fn preview_profile(profile: Profile) -> Preview {
     }
 }
 
+#[derive(Serialize)]
+struct Saved {
+    path: String,
+    /// Se reprogramó el teclado porque alguna tecla cambió lo que envía.
+    reapplied: bool,
+    /// Hacía falta reprogramar pero no se pudo (p. ej. pad desconectado).
+    reapply_error: Option<String>,
+}
+
 #[tauri::command(async)]
-fn save_profile(id: String, profile: Profile) -> CmdResult<String> {
+fn save_profile(id: String, profile: Profile) -> CmdResult<Saved> {
     if let Some(t) = tool::locate() {
         let config = profile.to_ch57x_yaml(profile.platform.effective()).map_err(err)?;
         tool::validate(&t, &config).map_err(err)?;
     }
-    profile.save(&id).map(|p| p.display().to_string()).map_err(err)
+    let path = profile.save(&id).map(|p| p.display().to_string()).map_err(err)?;
+    let mut saved = Saved { path, reapplied: false, reapply_error: None };
+    if macropad_core::needs_reapply(&id, Platform::current()) {
+        if device::find().map(|f| f.is_empty()).unwrap_or(true) {
+            saved.reapply_error = Some("el pad no está conectado; se programará al conectarlo".into());
+        } else {
+            match macropad_core::apply_profile(&id, Platform::current(), Trigger::Manual) {
+                Ok(_) => saved.reapplied = true,
+                Err(e) => saved.reapply_error = Some(format!("{e:#}")),
+            }
+        }
+    }
+    Ok(saved)
 }
 
 #[tauri::command(async)]
@@ -226,6 +263,7 @@ struct Diagnosis {
     report: diagnose::Report,
     text: String,
     history: Vec<state::Record>,
+    runs: Vec<Run>,
 }
 
 #[tauri::command(async)]
@@ -240,7 +278,54 @@ fn run_diagnose() -> Diagnosis {
             text.push_str(&format!("{mark} {} {} {} {} {}\n", r.timestamp, r.profile, r.platform, r.trigger, r.message));
         }
     }
-    Diagnosis { report, text, history }
+    let runs = runs::history(30);
+    if !runs.is_empty() {
+        text.push_str("\n== Comandos ejecutados\n");
+        for r in &runs {
+            let detail = r.output.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+            text.push_str(&format!("{} {} {} {} {} {} ms {}\n", r.result, r.timestamp, r.control, r.label, r.trigger, r.duration_ms, detail));
+        }
+    }
+    Diagnosis { report, text, history, runs }
+}
+
+/// «Probar»: ejecuta la automatización ahora y devuelve el resultado.
+#[tauri::command(async)]
+fn test_binding(profile_id: String, control: String, binding: Binding) -> CmdResult<automation::Outcome> {
+    binding.validate().map_err(err)?;
+    if !binding.is_automation() {
+        return Err("solo se pueden probar comandos y flujos".into());
+    }
+    let outcome = automation::run(&binding);
+    let _ = runs::save(&Run::finished(&profile_id, &control, &binding.display_name(), "prueba", &outcome));
+    Ok(outcome)
+}
+
+#[tauri::command(async)]
+fn list_library() -> CmdResult<Vec<Template>> {
+    library::list(Platform::current()).map_err(err)
+}
+
+/// La automatización de una plantilla con los datos que pidió.
+#[tauri::command(async)]
+fn use_template(id: String, values: BTreeMap<String, String>) -> CmdResult<Binding> {
+    library::find(&id, Platform::current()).and_then(|t| t.instantiate(&values)).map_err(err)
+}
+
+#[tauri::command(async)]
+fn save_to_library(title: String, description: String, binding: Binding) -> CmdResult<Template> {
+    library::save_user(&title, &description, binding).map_err(err)
+}
+
+#[tauri::command(async)]
+fn delete_from_library(id: String) -> CmdResult<bool> {
+    library::delete_user(&id).map_err(err)
+}
+
+/// Linux: instala la regla udev con pkexec (ventana de contraseña del sistema).
+#[tauri::command(async)]
+fn grant_input_permission() -> CmdResult<()> {
+    input::grant_permission().map_err(err)
 }
 
 #[tauri::command(async)]
@@ -287,6 +372,12 @@ fn main() {
             get_catalog,
             run_diagnose,
             restart_agent,
+            test_binding,
+            list_library,
+            use_template,
+            save_to_library,
+            delete_from_library,
+            grant_input_permission,
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo iniciar la ventana de MacroPad Agent");

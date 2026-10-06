@@ -15,6 +15,7 @@
     <div class="status" id="status">
       <span class="pill" id="st-device">Macro pad…</span>
       <span class="pill" id="st-agent">Agente…</span>
+      <span class="pill hidden" id="st-cmds"></span>
       <span class="pill muted" id="st-last">Último aplicado…</span>
     </div>
   </header>
@@ -35,8 +36,9 @@
       </form>
       <ul class="profiles" id="profiles"></ul>
       <nav class="tabs">
-        <button class="tab active" data-tab="editor">Editor</button>
-        <button class="tab" data-tab="diagnose">Diagnóstico</button>
+        <button class="tab active" data-tab="editor" title="Ctrl+1">Editor</button>
+        <button class="tab" data-tab="library" title="Ctrl+2">Biblioteca</button>
+        <button class="tab" data-tab="diagnose" title="Ctrl+3">Diagnóstico</button>
       </nav>
     </aside>
 
@@ -61,6 +63,15 @@
           </div>
         </div>
 
+        <div class="banner hidden" id="perm-banner">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"/><line x1="12" y1="10" x2="12" y2="14"/><line x1="12" y1="17" x2="12" y2="17"/></svg>
+          <div class="banner-text">
+            <strong id="perm-title">El agente no puede leer las teclas del pad</strong>
+            <span id="perm-body">Los comandos se guardan, pero no se ejecutarán al pulsar las teclas hasta dar el permiso.</span>
+          </div>
+          <button class="primary small" id="btn-grant">Dar permiso</button>
+        </div>
+
         <div class="pad-wrap">
           <div class="pad" id="pad">
             <div class="keys" id="keys"></div>
@@ -76,7 +87,11 @@
               </button>
             </div>
           </div>
-          <p class="hint">Haz clic en una tecla o en la perilla para cambiar su acción. La fila superior son las teclas 1–3, con la perilla a la derecha.</p>
+          <div class="legend">
+            <span><i class="dot blue"></i>Atajo o multimedia: lo guarda el teclado</span>
+            <span><i class="dot amber"></i>Comando o flujo: lo ejecuta el agente</span>
+          </div>
+          <p class="hint">Haz clic en una tecla o en la perilla para cambiar lo que hace. La fila superior son las teclas 1–3, con la perilla a la derecha.</p>
         </div>
 
         <div class="messages" id="messages"></div>
@@ -91,6 +106,20 @@
         </div>
       </section>
 
+      <section id="tab-library" class="tab-panel hidden">
+        <div class="lib-head">
+          <div>
+            <h1>Biblioteca</h1>
+            <p class="muted">Flujos y comandos listos para asignar a una tecla. Al elegir uno solo te pide lo que falta, como la carpeta del proyecto, y después puedes editarlo.</p>
+          </div>
+          <label class="field lib-search">Buscar
+            <input id="lib-search" placeholder="desplegar, terminal, git…">
+          </label>
+        </div>
+        <div class="chips lib-cats" id="lib-cats" role="tablist" aria-label="Categorías"></div>
+        <div id="lib-list"></div>
+      </section>
+
       <section id="tab-diagnose" class="tab-panel hidden">
         <div class="diag-head">
           <h2>Diagnóstico</h2>
@@ -101,7 +130,12 @@
           </div>
         </div>
         <div id="diag-checks" class="checks"></div>
-        <h3>Historial</h3>
+        <h3>Comandos ejecutados</h3>
+        <table class="history">
+          <thead><tr><th></th><th>Fecha</th><th>Control</th><th>Nombre</th><th>Origen</th><th>Duración</th><th>Detalle</th></tr></thead>
+          <tbody id="diag-runs"></tbody>
+        </table>
+        <h3>Perfiles aplicados</h3>
         <table class="history">
           <thead><tr><th></th><th>Fecha</th><th>Perfil</th><th>Origen</th><th>Resultado</th></tr></thead>
           <tbody id="diag-history"></tbody>
@@ -112,44 +146,148 @@
     <aside class="editor hidden" id="editor">
       <div class="editor-head">
         <div>
-          <div class="eyebrow" id="ed-eyebrow">Control</div>
-          <h2 id="ed-title">Tecla 1</h2>
+          <div class="eyebrow" id="ed-eyebrow">Tecla 1</div>
+          <h2>¿Qué hace esta tecla?</h2>
         </div>
-        <button class="ghost small" id="ed-close" aria-label="Cerrar">✕</button>
+        <button class="ghost small icon-btn" id="ed-close" aria-label="Cerrar panel">✕</button>
       </div>
+
+      <div class="types" id="ed-types" role="radiogroup" aria-label="Tipo de acción">
+        <button class="type" role="radio" data-type="keys">
+          <svg viewBox="0 0 24 24" class="blue" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="6" y2="10"/><line x1="10" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="14" y2="10"/><line x1="18" y1="10" x2="18" y2="10"/><line x1="8" y1="14" x2="16" y2="14"/></svg>
+          <span><b>Atajo</b><small>Guardar, copiar o tu combinación</small></span>
+        </button>
+        <button class="type" role="radio" data-type="media">
+          <svg viewBox="0 0 24 24" class="blue" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>
+          <span><b>Multimedia</b><small>Volumen, reproducir, pistas</small></span>
+        </button>
+        <button class="type" role="radio" data-type="command">
+          <svg viewBox="0 0 24 24" class="amber" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          <span><b>Comando</b><small>Un comando o script</small></span>
+        </button>
+        <button class="type" role="radio" data-type="flow">
+          <svg viewBox="0 0 24 24" class="amber" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 6H15a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h6.5"/></svg>
+          <span><b>Flujo</b><small>Varios pasos en orden</small></span>
+        </button>
+      </div>
+
       <div class="current">Actual: <code id="ed-current">—</code> <span id="ed-resolved" class="muted"></span></div>
 
-      <div class="subtabs" id="ed-tabs">
-        <button class="subtab active" data-sub="common">Acciones</button>
-        <button class="subtab" data-sub="combo">Combinación</button>
-        <button class="subtab" data-sub="media">Multimedia</button>
-        <button class="subtab" data-sub="raw">Directo</button>
+      <!-- Atajo -->
+      <div class="sec" data-sec="keys">
+        <div id="ed-common"></div>
+        <details class="fold" id="ed-combo-fold">
+          <summary>Combinación propia</summary>
+          <div class="mods" id="ed-mods"></div>
+          <label class="field">Tecla
+            <select id="ed-key"></select>
+          </label>
+          <div class="combo-preview">Resultado: <code id="ed-combo">—</code></div>
+          <button class="primary" id="ed-combo-use">Usar combinación</button>
+        </details>
+        <details class="fold">
+          <summary>Valor directo</summary>
+          <p class="hint">Cualquier valor de <code>ch57x-keyboard-tool show-keys</code>, por ejemplo <code>ctrl-alt-t</code>, <code>f13</code> o una secuencia <code>ctrl-k,ctrl-c</code> (hasta 5 pasos).</p>
+          <input id="ed-raw" placeholder="ctrl-alt-t">
+          <button class="primary" id="ed-raw-use">Usar valor</button>
+        </details>
       </div>
 
-      <div class="sub" data-sub="common" id="ed-common"></div>
-
-      <div class="sub hidden" data-sub="combo">
-        <div class="mods" id="ed-mods"></div>
-        <label class="field">Tecla
-          <select id="ed-key"></select>
-        </label>
-        <div class="combo-preview">Resultado: <code id="ed-combo">—</code></div>
-        <button class="primary" id="ed-combo-use">Usar combinación</button>
-      </div>
-
-      <div class="sub hidden" data-sub="media">
+      <!-- Multimedia -->
+      <div class="sec hidden" data-sec="media">
         <p class="hint">Las teclas multimedia no se pueden combinar con modificadores.</p>
-        <div class="chips" id="ed-media"></div>
+        <div id="ed-media"></div>
       </div>
 
-      <div class="sub hidden" data-sub="raw">
-        <p class="hint">Cualquier valor de <code>ch57x-keyboard-tool show-keys</code>, por ejemplo <code>ctrl-alt-t</code>, <code>f13</code> o una secuencia <code>ctrl-k,ctrl-c</code> (hasta 5 pasos).</p>
-        <input id="ed-raw" placeholder="ctrl-alt-t">
-        <button class="primary" id="ed-raw-use">Usar valor</button>
+      <!-- Comando -->
+      <div class="sec hidden" data-sec="command">
+        <label class="field">Etiqueta en la tecla
+          <input id="cmd-label" placeholder="Desplegar">
+        </label>
+        <label class="field">Comando o script
+          <textarea id="cmd-command" rows="3" class="mono" placeholder="~/scripts/deploy.sh staging"></textarea>
+          <span class="hint">Se ejecuta con tu shell y tus permisos. Puedes usar <code>~</code>, tuberías y variables.</span>
+        </label>
+        <label class="field">Carpeta de trabajo <span class="muted">(opcional)</span>
+          <input id="cmd-cwd" class="mono" placeholder="~/Projects/mi-app">
+        </label>
+        <fieldset class="checks-group">
+          <legend>Al pulsar la tecla</legend>
+          <label><input type="checkbox" id="cmd-notify">Notificar cuando termine</label>
+          <label><input type="checkbox" id="cmd-terminal">Abrir en una terminal para ver la salida</label>
+          <label><input type="checkbox" id="cmd-single">Ignorar la tecla si ya se está ejecutando</label>
+          <label><input type="checkbox" id="cmd-confirm">Pedir confirmación (pulsar dos veces)</label>
+        </fieldset>
+        <div class="row two">
+          <button id="cmd-test" class="with-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>Probar ahora</button>
+          <button class="primary" id="cmd-use">Usar comando</button>
+        </div>
+        <div class="result hidden" id="cmd-result"></div>
+        <div>
+          <div class="group-title">Plantillas rápidas</div>
+          <div class="chips" id="cmd-quick"></div>
+        </div>
       </div>
 
-      <button class="ghost danger small" id="ed-clear">Quitar asignación</button>
+      <!-- Flujo -->
+      <div class="sec hidden" data-sec="flow">
+        <div class="from-lib">
+          <span>¿Sin ideas? Empieza desde la biblioteca.</span>
+          <button class="ghost small" id="flow-lib">Ver biblioteca</button>
+        </div>
+        <label class="field">Etiqueta en la tecla
+          <input id="flow-label" placeholder="Empezar a trabajar">
+        </label>
+        <label class="field">Proyecto (carpeta de trabajo)
+          <input id="flow-cwd" class="mono" placeholder="~/Projects/mi-app">
+        </label>
+        <div id="flow-vars"></div>
+        <div class="field">
+          <span>Pasos</span>
+          <ol class="steps" id="flow-steps"></ol>
+          <button class="ghost small dashed" id="flow-add">+ Agregar paso</button>
+        </div>
+        <fieldset class="checks-group">
+          <legend>Cuándo y cómo se ejecuta</legend>
+          <label><input type="checkbox" id="flow-connect">También al conectar el pad (una vez al día)</label>
+          <label><input type="checkbox" id="flow-notify">Notificar cuando termine</label>
+          <label><input type="checkbox" id="flow-single">Ignorar la tecla si ya se está ejecutando</label>
+          <label><input type="checkbox" id="flow-confirm">Pedir confirmación (pulsar dos veces)</label>
+        </fieldset>
+        <div class="row two">
+          <button id="flow-test" class="with-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>Probar flujo</button>
+          <button class="primary" id="flow-use">Usar flujo</button>
+        </div>
+        <div class="result hidden" id="flow-result"></div>
+      </div>
+
+      <div class="row editor-foot">
+        <button class="ghost danger small" id="ed-clear">Quitar asignación</button>
+        <button class="ghost small hidden" id="ed-save-lib">Guardar en la biblioteca</button>
+      </div>
     </aside>
+  </div>
+
+  <div class="overlay hidden" id="tpl-overlay">
+    <form class="sheet" id="tpl-form">
+      <div class="editor-head">
+        <div>
+          <div class="eyebrow" id="tpl-cat">Biblioteca</div>
+          <h2 id="tpl-title">Plantilla</h2>
+        </div>
+        <button type="button" class="ghost small icon-btn" id="tpl-close" aria-label="Cerrar">✕</button>
+      </div>
+      <p class="muted" id="tpl-desc"></p>
+      <div id="tpl-preview" class="tpl-preview"></div>
+      <label class="field">Asignar a
+        <select id="tpl-control"></select>
+      </label>
+      <div id="tpl-needs"></div>
+      <div class="row two">
+        <button type="button" id="tpl-cancel">Cancelar</button>
+        <button type="submit" class="primary">Asignar</button>
+      </div>
+    </form>
   </div>
 
   <div class="toast hidden" id="toast"></div>

@@ -1,12 +1,137 @@
 # MacroPad Agent
 
-Agente local para Linux y macOS que detecta el macro pad USB `1189:8890` y le programa el perfil del sistema operativo. No usa cuentas, red ni telemetría.
+Agente local para Linux y macOS que detecta el macro pad USB `1189:8890` y le programa el perfil del sistema operativo. Cada tecla puede ser un atajo, una tecla multimedia, un comando o un flujo de varios pasos (abrir terminales y el editor, desplegar, etc.), con una biblioteca de preconfigurados. No usa cuentas, red ni telemetría.
 
-- `crates/core`: perfiles, catálogo de acciones, detección USB y programación (usa `ch57x-keyboard-tool`).
+- `crates/core`: perfiles, catálogo de acciones, comandos y flujos, biblioteca, detección USB y escucha de teclas, programación (usa `ch57x-keyboard-tool`).
 - `crates/daemon`: binario `macropad-agent` (CLI y agente en segundo plano).
 - `crates/desktop`: ventana de configuración Tauri (`macropad-agent-desktop`).
 - `profiles/`: perfiles incluidos.
 - `installers/`: regla `udev`, servicio `systemd`, paquete `.deb` y LaunchAgent.
+
+## Linux
+
+Probado en Arch Linux (Omarchy, Hyprland). Debe funcionar en cualquier distribución con `systemd` y una sesión gráfica (Wayland o X11).
+
+Se instala desde el código, para tu usuario: no toca nada del sistema salvo una regla `udev` limitada al macro pad.
+
+### 1. Instalar lo necesario
+
+**Dependencias del sistema.** Las primeras sirven para compilar la ventana y hablar con el USB; `libnotify` y `xdg-utils` dan las notificaciones y abren los enlaces de los flujos:
+
+```bash
+# Debian / Ubuntu (22.04 o posterior)
+sudo apt install build-essential pkg-config git curl libwebkit2gtk-4.1-dev libusb-1.0-0-dev libssl-dev libnotify-bin xdg-utils
+
+# Fedora
+sudo dnf install gcc pkgconf-pkg-config git curl webkit2gtk4.1-devel libusb1-devel openssl-devel libnotify xdg-utils
+
+# Arch / Omarchy
+sudo pacman -S --needed base-devel git webkit2gtk-4.1 libusb libnotify xdg-utils
+```
+
+Para los pasos «Terminal» de los flujos sirve la terminal que ya tengas: GNOME Terminal, Ptyxis, Konsole, Kitty, Alacritty, Foot, WezTerm, xfce4-terminal o xterm.
+
+**Rust 1.88 o posterior.** Los paquetes de Rust de algunas distribuciones son más viejos; lo más seguro es `rustup`:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+rustc --version        # debe decir 1.88 o más
+```
+
+**La herramienta que programa el teclado:**
+
+```bash
+cargo install ch57x-keyboard-tool
+```
+
+### 2. Instalar MacroPad Agent
+
+Conecta el macro pad por cable y ejecuta:
+
+```bash
+git clone https://github.com/Jos1704/MacroPad-Agent.git
+cd MacroPad-Agent
+installers/linux/install.sh
+```
+
+El script:
+
+1. Compila el agente y la ventana (la primera vez tarda unos minutos).
+2. Los instala en `~/.local/bin` y añade **MacroPad Agent** al menú de aplicaciones.
+3. Instala la regla `udev` `/etc/udev/rules.d/70-macropad-agent.rules`, que deja a tu usuario programar el pad y leer sus teclas. **Aquí pide tu contraseña**, en la terminal o en una ventana del sistema.
+4. Activa el servicio de usuario `macropad-agent`, que arranca con tu sesión.
+
+Al terminar, **desconecta y vuelve a conectar el macro pad**. El agente lo programa con el perfil `desarrollo-linux` y muestra una notificación.
+
+### 3. Comprobar que funciona
+
+```bash
+macropad-agent diagnose
+```
+
+Debe terminar con «Todo listo». Para comprobar también el hardware:
+
+```bash
+macropad-agent diagnose --apply-test   # cada tecla escribe su número: 1–6
+macropad-agent apply desarrollo-linux  # vuelve al perfil de desarrollo
+```
+
+### 4. Usarlo
+
+- **Ventana de configuración:** ábrela desde el menú de aplicaciones («MacroPad Agent») o con `macropad-agent-desktop`. Haz clic en una tecla para elegir qué hace: un atajo, multimedia, un comando o un flujo de varios pasos. En **Biblioteca** hay flujos listos (empezar a trabajar, desplegar, ver logs, pruebas…). Guarda el perfil y listo: el teclado se reprograma solo si hace falta.
+- **El agente** corre en segundo plano aunque la ventana esté cerrada: programa el pad al conectarlo y ejecuta los comandos y flujos de sus teclas.
+- **Línea de comandos:**
+
+  ```bash
+  macropad-agent status              # conexión, perfil aplicado y agente
+  macropad-agent profiles            # perfiles disponibles
+  macropad-agent apply <perfil>      # programar un perfil ahora
+  macropad-agent ejecutar key_6      # correr el comando de una tecla sin pulsarla
+  macropad-agent comandos            # historial de comandos ejecutados
+  journalctl --user -u macropad-agent -f   # registro del agente
+  ```
+
+### Actualizar
+
+```bash
+cd MacroPad-Agent
+git pull
+installers/linux/install.sh
+```
+
+Tus perfiles y tu biblioteca están en `~/.config/macropad-agent/` y no se tocan al actualizar.
+
+### Problemas comunes
+
+| Síntoma | Solución |
+|---|---|
+| `macropad-agent: command not found` | Agrega `~/.local/bin` a tu `PATH` (por ejemplo, en `~/.bashrc`: `export PATH="$HOME/.local/bin:$PATH"`). |
+| `Access denied` o «SIN permisos» en `diagnose` | Desconecta y vuelve a conectar el pad. Si sigue, ejecuta `installers/linux/install-udev.sh`. |
+| Los comandos no se ejecutan al pulsar las teclas | En la ventana, usa «Dar permiso» si aparece el aviso; luego `systemctl --user restart macropad-agent`. Revisa `macropad-agent diagnose`, sección «Comandos y flujos». |
+| No aparece en el menú de aplicaciones | Cierra sesión y vuelve a entrar. En Omarchy: `omarchy restart shell`. |
+| `no se encontró ch57x-keyboard-tool` | `cargo install ch57x-keyboard-tool` (queda en `~/.cargo/bin`, que el agente ya revisa). |
+| Error al compilar por `webkit2gtk-4.1` o `libusb` | Faltan las dependencias del paso 1. |
+| La ventana se abre en blanco (pasa con algunas tarjetas NVIDIA) | Ábrela con `WEBKIT_DISABLE_DMABUF_RENDERER=1 macropad-agent-desktop`. |
+
+### Desinstalar
+
+```bash
+installers/linux/uninstall.sh
+```
+
+Quita el agente, la ventana, el servicio y la regla `udev`. Conserva `~/.config/macropad-agent/`; bórrala a mano si no la quieres.
+
+### Paquete `.deb` (opcional)
+
+Para instalar en Debian o Ubuntu sin compilar en cada equipo, genera un paquete en un equipo con todo lo anterior:
+
+```bash
+cargo install tauri-cli --version "^2" --locked
+installers/linux/build-deb.sh
+```
+
+Sale en `target/release/bundle/deb/` e incluye `ch57x-keyboard-tool`, así que en el otro equipo basta con `sudo apt install ./MacroPad*.deb`.
 
 ## macOS
 

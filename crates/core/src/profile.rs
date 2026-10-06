@@ -9,6 +9,7 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::actions;
+use crate::automation::{self, Binding};
 use crate::device;
 use crate::paths;
 use crate::platform::Platform;
@@ -23,27 +24,25 @@ pub struct Profile {
 
 /// Seis teclas y una perilla, en la misma posición física en todos los perfiles.
 /// Con la perilla a la derecha, las teclas 1–3 forman la fila superior.
+/// Cada control es una pulsación (`ctrl-s`, `guardar`, `mute`…) o una
+/// automatización (`command:` o `flow:`) que ejecuta el agente.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Bindings {
-    pub key_1: Option<String>,
-    pub key_2: Option<String>,
-    pub key_3: Option<String>,
-    pub key_4: Option<String>,
-    pub key_5: Option<String>,
-    pub key_6: Option<String>,
-    pub knob_left: Option<String>,
-    pub knob_right: Option<String>,
-    pub knob_press: Option<String>,
+    pub key_1: Option<Binding>,
+    pub key_2: Option<Binding>,
+    pub key_3: Option<Binding>,
+    pub key_4: Option<Binding>,
+    pub key_5: Option<Binding>,
+    pub key_6: Option<Binding>,
+    pub knob_left: Option<Binding>,
+    pub knob_right: Option<Binding>,
+    pub knob_press: Option<Binding>,
 }
 
 impl Bindings {
-    pub fn keys(&self) -> [&Option<String>; 6] {
-        [&self.key_1, &self.key_2, &self.key_3, &self.key_4, &self.key_5, &self.key_6]
-    }
-
     /// Pares (control, valor) en orden físico.
-    pub fn entries(&self) -> Vec<(&'static str, &Option<String>)> {
+    pub fn entries(&self) -> Vec<(&'static str, &Option<Binding>)> {
         vec![
             ("key_1", &self.key_1),
             ("key_2", &self.key_2),
@@ -55,6 +54,18 @@ impl Bindings {
             ("knob_right", &self.knob_right),
             ("knob_press", &self.knob_press),
         ]
+    }
+
+    pub fn get(&self, control: &str) -> Option<&Binding> {
+        self.entries().into_iter().find(|(c, _)| *c == control).and_then(|(_, b)| b.as_ref())
+    }
+
+    /// Controles con comando o flujo.
+    pub fn automations(&self) -> Vec<(&'static str, &Binding)> {
+        self.entries()
+            .into_iter()
+            .filter_map(|(c, b)| b.as_ref().filter(|b| b.is_automation()).map(|b| (c, b)))
+            .collect()
     }
 }
 
@@ -177,13 +188,12 @@ impl Profile {
         }
         let platform = self.resolution_platform(target);
         for (control, value) in self.bindings.entries() {
-            let Some(value) = value else {
+            let Some(binding) = value else {
                 warnings.push(format!("{control} no tiene acción asignada"));
                 continue;
             };
-            if value.trim().is_empty() {
-                bail!("{control} está vacío");
-            }
+            binding.validate().with_context(|| automation::control_label(control))?;
+            let Binding::Keys(value) = binding else { continue };
             let raw = actions::resolve(value, platform);
             if let Some(m) = actions::foreign_modifier(&raw, platform) {
                 warnings.push(format!("{control} = «{raw}» usa el modificador «{m}», propio de otro sistema"));
@@ -199,21 +209,27 @@ impl Profile {
         }
     }
 
-    /// Valor ya traducido para cada control.
+    /// Lo que envía cada control: el atajo traducido o, si tiene una
+    /// automatización, su tecla reservada (ver `automation::CONTROL_KEYS`).
     pub fn resolved(&self, target: Platform) -> Vec<(&'static str, Option<String>)> {
         let platform = self.resolution_platform(target);
         self.bindings
             .entries()
             .into_iter()
-            .map(|(control, value)| (control, value.as_deref().map(|v| actions::resolve(v, platform))))
+            .map(|(control, value)| (control, value.as_ref().map(|b| resolve_binding(control, b, platform))))
             .collect()
     }
 
     /// Genera la configuración de `ch57x-keyboard-tool` para este perfil.
     pub fn to_ch57x_yaml(&self, target: Platform) -> Result<String> {
         let platform = self.resolution_platform(target);
-        let r = |v: &Option<String>| v.as_deref().map(|v| actions::resolve(v, platform));
-        let keys: Vec<Option<String>> = self.bindings.keys().iter().map(|k| r(k)).collect();
+        let b = &self.bindings;
+        let r = |control: &str, v: &Option<Binding>| v.as_ref().map(|b| resolve_binding(control, b, platform));
+        let keys: Vec<Option<String>> = [&b.key_1, &b.key_2, &b.key_3, &b.key_4, &b.key_5, &b.key_6]
+            .iter()
+            .enumerate()
+            .map(|(i, k)| r(&format!("key_{}", i + 1), k))
+            .collect();
         let (rows, cols) = (device::ROWS as usize, device::COLUMNS as usize);
         let buttons: Vec<Vec<Option<String>>> = keys.chunks(cols).map(|c| c.to_vec()).collect();
         debug_assert_eq!(buttons.len(), rows);
@@ -227,13 +243,20 @@ impl Profile {
             layers: vec![Ch57xLayer {
                 buttons,
                 knobs: vec![Ch57xKnob {
-                    ccw: r(&self.bindings.knob_left),
-                    press: r(&self.bindings.knob_press),
-                    cw: r(&self.bindings.knob_right),
+                    ccw: r("knob_left", &b.knob_left),
+                    press: r("knob_press", &b.knob_press),
+                    cw: r("knob_right", &b.knob_right),
                 }],
             }],
         };
         Ok(serde_yaml::to_string(&config)?)
+    }
+}
+
+fn resolve_binding(control: &str, binding: &Binding, platform: Platform) -> String {
+    match binding {
+        Binding::Keys(v) => actions::resolve(v, platform),
+        _ => automation::reserved_key(control).unwrap_or_default().to_string(),
     }
 }
 
@@ -304,11 +327,11 @@ mod tests {
         unsafe { std::env::set_var("MACROPAD_AGENT_HOME", &dir) };
 
         let (mut p, _) = Profile::load("desarrollo-linux").unwrap();
-        p.bindings.key_6 = Some("ctrl-alt-t".into());
+        p.bindings.key_6 = Some(Binding::Keys("ctrl-alt-t".into()));
         p.save("desarrollo-linux").unwrap();
         let (loaded, source) = Profile::load("desarrollo-linux").unwrap();
         assert!(matches!(source, Source::User(_)));
-        assert_eq!(loaded.bindings.key_6.as_deref(), Some("ctrl-alt-t"));
+        assert_eq!(loaded.bindings.key_6, Some(Binding::Keys("ctrl-alt-t".into())));
 
         assert!(Profile::delete_user("desarrollo-linux").unwrap());
         let (_, source) = Profile::load("desarrollo-linux").unwrap();
@@ -316,6 +339,17 @@ mod tests {
         assert!(Profile::user_path("../x").is_err());
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn automations_send_reserved_keys() {
+        let text = "name: x\nplatform: linux\nbindings:\n  key_1: guardar\n  key_6:\n    command: echo hola\n  knob_press:\n    flow:\n      - open: https://example.com\n";
+        let p = Profile::from_yaml(text).unwrap();
+        p.validate(Platform::Linux).unwrap();
+        let yaml = p.to_ch57x_yaml(Platform::Linux).unwrap();
+        assert!(yaml.contains("ctrl-s") && yaml.contains("f18") && yaml.contains("shift-f13"));
+        let controls: Vec<&str> = p.bindings.automations().iter().map(|(c, _)| *c).collect();
+        assert_eq!(controls, ["key_6", "knob_press"]);
     }
 
     #[test]
