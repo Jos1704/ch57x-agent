@@ -1,6 +1,23 @@
 # MacroPad Agent
 
-Agente local para Linux y macOS que detecta el macro pad USB `1189:8890` y le programa el perfil del sistema operativo. Cada tecla puede ser un atajo, una tecla multimedia, un comando o un flujo de varios pasos (abrir terminales y el editor, desplegar, etc.), con una biblioteca de preconfigurados. No usa cuentas, red ni telemetría.
+Agente local para Linux y macOS que detecta el macro pad USB con chip **CH57x** (`1189:8890`) y le programa el perfil del sistema operativo. Cada tecla puede ser un atajo, una tecla multimedia, un comando o un flujo de varios pasos (abrir terminales y el editor, desplegar, etc.), con una biblioteca de preconfigurados. No usa cuentas, red ni telemetría.
+
+<!-- Foto o GIF del macro pad: guárdala en docs/img/ y descomenta la línea.
+![Macro pad CH57x con MacroPad Agent](docs/img/macropad.jpg)
+-->
+
+### ¿Es tu macro pad?
+
+Es el macro pad genérico que se vende sin marca en AliExpress, Amazon y similares, y que de fábrica se programa con un software solo para Windows. MacroPad Agent soporta el modelo de **6 teclas y 1 perilla**. Para saber si el tuyo usa el mismo chip, conéctalo y busca el ID `1189:8890`:
+
+```bash
+lsusb | grep 1189:8890                          # Linux
+system_profiler SPUSBDataType | grep -A2 0x8890  # macOS
+```
+
+Si aparece y tiene 6 teclas y una perilla, MacroPad Agent puede programarlo. Si tienes otra disposición, abre un issue.
+
+### Estructura
 
 - `crates/core`: perfiles, catálogo de acciones, comandos y flujos, biblioteca, detección USB y escucha de teclas, programación (usa `ch57x-keyboard-tool`).
 - `crates/daemon`: binario `macropad-agent` (CLI y agente en segundo plano).
@@ -183,3 +200,23 @@ Sale en `target/release/bundle/dmg/`. Si falla en `bundle_dmg.sh`, desmonta el v
 ## Documentación
 
 Instalación y uso: [docs/instalacion-local.md](docs/instalacion-local.md). Cómo terminar macOS: [docs/macos-agente.md](docs/macos-agente.md). Plan: [plan-macropad-agent.md](plan-macropad-agent.md).
+
+## Contribuir
+
+Los issues y pull requests son bienvenidos, sobre todo:
+
+- **Otros modelos del macro pad CH57x** (otra cantidad de teclas o perillas): abre un issue con la salida de `lsusb` y una foto.
+- **Flujos y perfiles para la biblioteca** que te sirvan en tu día a día.
+- **Pruebas en otras distribuciones**: cuéntanos en qué distribución y entorno gráfico funcionó, o qué falló.
+
+Antes de abrir un pull request, ejecuta `cargo test`.
+
+## Créditos
+
+La programación del teclado la hace [`ch57x-keyboard-tool`](https://github.com/kriomant/ch57x-keyboard-tool) (MIT o Apache-2.0).
+
+## Licencia
+
+MacroPad Agent se distribuye bajo la licencia MIT; consulta [LICENSE](LICENSE).
+
+Los paquetes `.deb` y `.app` incluyen `ch57x-keyboard-tool`. La `.app` de macOS lleva además [libusb](https://libusb.info) enlazada de forma estática, que se distribuye bajo la licencia [LGPL-2.1](https://github.com/libusb/libusb/blob/master/COPYING). Su código fuente está en <https://github.com/libusb/libusb>. Puedes volver a enlazar la app con otra versión de libusb compilándola desde este repositorio, como se explica en «Correr desde el código».
