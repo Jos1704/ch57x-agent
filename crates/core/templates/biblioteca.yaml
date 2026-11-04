@@ -92,6 +92,55 @@
       - { label: Pausar música, run: "playerctl pause 2>/dev/null; osascript -e 'tell application \"Music\" to pause' 2>/dev/null; true" }
       - { label: Abrir sala, open: "$SALA" }
 
+- id: empezar-el-dia
+  category: flujos
+  title: Empezar el día
+  description: Abre tu correo, tu calendario y los pull requests que te pidieron revisar.
+  needs:
+    - { key: CORREO, label: Enlace de tu correo, default: "https://mail.google.com" }
+    - { key: CALENDARIO, label: Enlace de tu calendario, default: "https://calendar.google.com" }
+  binding:
+    label: Empezar el día
+    flow:
+      - { label: Correo, open: "$CORREO" }
+      - { label: Calendario, open: "$CALENDARIO" }
+      - { label: Revisiones pendientes, open: "https://github.com/pulls/review-requested" }
+
+- id: pendientes-github
+  category: flujos
+  title: Revisar pendientes de GitHub
+  description: Abre los pull requests que esperan tu revisión, tus issues asignados y tus notificaciones.
+  binding:
+    label: Pendientes de GitHub
+    flow:
+      - { label: Revisiones, open: "https://github.com/pulls/review-requested" }
+      - { label: Issues asignados, open: "https://github.com/issues/assigned" }
+      - { label: Notificaciones, open: "https://github.com/notifications" }
+
+- id: tomar-un-descanso
+  category: flujos
+  title: Tomar un descanso
+  description: Pausa la música y bloquea la pantalla.
+  platforms: [linux]
+  binding:
+    label: Descanso
+    notify: false
+    flow:
+      - { label: Pausar música, run: "playerctl pause 2>/dev/null; true" }
+      - { label: Bloquear, run: "loginctl lock-session" }
+
+- id: tomar-un-descanso-mac
+  category: flujos
+  title: Tomar un descanso
+  description: Pausa la música y apaga la pantalla.
+  platforms: [macos]
+  binding:
+    label: Descanso
+    notify: false
+    flow:
+      - { label: Pausar música, run: "osascript -e 'tell application \"Music\" to pause' 2>/dev/null; true" }
+      - { label: Apagar pantalla, run: "pmset displaysleepnow" }
+
 # ---------- Desplegar ----------
 
 - id: desplegar-staging
@@ -136,6 +185,79 @@
     label: Reiniciar servicios
     command: docker compose restart
 
+- id: levantar-servicios
+  category: desplegar
+  title: Levantar servicios
+  description: Arranca los contenedores del proyecto en segundo plano.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Levantar servicios
+    command: docker compose up -d
+
+- id: detener-servicios
+  category: desplegar
+  title: Detener servicios
+  description: Detiene y elimina los contenedores del proyecto.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Detener servicios
+    command: docker compose down
+
+- id: limpiar-docker
+  category: desplegar
+  title: Limpiar Docker
+  description: Borra contenedores detenidos, redes sin uso e imágenes huérfanas. Pide una segunda pulsación.
+  binding:
+    label: Limpiar Docker
+    command: docker system prune -f
+    confirm: true
+
+- id: revertir-despliegue
+  category: desplegar
+  title: Revertir el último despliegue
+  description: Ejecuta `./deploy.sh rollback`. Hay que pulsar la tecla dos veces en 3 segundos.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Revertir despliegue
+    command: ./deploy.sh rollback
+    confirm: true
+
+- id: sitio-responde
+  category: desplegar
+  title: Revisar si el sitio responde
+  description: Consulta la página y te avisa con el código HTTP y el tiempo de respuesta, o con un error si no contesta.
+  needs:
+    - { key: URL, label: Dirección del sitio, default: "https://example.com" }
+  binding:
+    label: ¿Sitio arriba?
+    command: 'r=$(curl -s -o /dev/null --max-time 10 -w "%{http_code} en %{time_total}s" "$URL"); case "$r" in 2*|3*) echo "$URL responde $r";; *) echo "$URL no responde ($r)"; exit 1;; esac'
+
+- id: ssh-servidor
+  category: desplegar
+  title: Conectarse al servidor (SSH)
+  description: Abre una terminal con una sesión SSH en tu servidor.
+  needs:
+    - { key: SERVIDOR, label: Servidor (usuario@host o alias de ~/.ssh/config), default: "usuario@mi-servidor" }
+  binding:
+    label: SSH
+    command: ssh "$SERVIDOR"
+    terminal: true
+
+- id: logs-servidor
+  category: desplegar
+  title: Logs del servidor en vivo
+  description: Abre una terminal siguiendo los logs de un servicio systemd de tu servidor.
+  needs:
+    - { key: SERVIDOR, label: Servidor (usuario@host o alias de ~/.ssh/config), default: "usuario@mi-servidor" }
+    - { key: SERVICIO, label: Servicio, default: "nginx" }
+  binding:
+    label: Logs del servidor
+    command: ssh -t "$SERVIDOR" journalctl -f -n 100 -u "$SERVICIO"
+    terminal: true
+
 # ---------- Desarrollo ----------
 
 - id: correr-pruebas
@@ -179,6 +301,168 @@
   binding:
     label: Actualizar repos
     command: 'for d in */; do [ -d "$d.git" ] && { git -C "$d" pull --ff-only -q && echo "✓ $d" || echo "✗ $d"; }; done'
+
+- id: abrir-en-editor
+  category: desarrollo
+  title: Abrir el proyecto en el editor
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+    - { key: EDITOR, label: Comando del editor, default: "code" }
+  binding:
+    label: Editor
+    notify: false
+    flow:
+      - { label: Editor, run: "$EDITOR .", detach: true }
+
+- id: estado-git
+  category: desarrollo
+  title: Estado de git
+  description: Abre una terminal con los archivos cambiados y los últimos 10 commits.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Estado de git
+    command: git status -sb && echo && git log --oneline --graph -10
+    terminal: true
+
+- id: lazygit
+  category: desarrollo
+  title: Abrir lazygit
+  description: Interfaz de git en la terminal para revisar, preparar y hacer commits. Necesita lazygit instalado.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: lazygit
+    command: lazygit
+    terminal: true
+
+- id: traer-cambios
+  category: desarrollo
+  title: Traer cambios (git pull)
+  description: Actualiza la rama actual sin crear commits de merge y te avisa con el último commit.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: git pull
+    command: git pull --ff-only -q && git log --oneline -1
+
+- id: subir-cambios
+  category: desarrollo
+  title: Subir cambios (git push)
+  description: Sube la rama actual. Hay que pulsar la tecla dos veces en 3 segundos.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: git push
+    command: git push -q && echo "Rama $(git branch --show-current) subida"
+    confirm: true
+
+- id: guardar-en-stash
+  category: desarrollo
+  title: Guardar cambios en stash
+  description: Aparta los cambios sin commit (incluidos los archivos nuevos) para cambiar de tarea.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: git stash
+    command: 'if [ -z "$(git status --porcelain)" ]; then echo "No hay cambios que guardar"; else git stash push -u -q -m "macropad $(date "+%F %H:%M")" && echo "Guardado en el stash"; fi'
+
+- id: recuperar-stash
+  category: desarrollo
+  title: Recuperar el último stash
+  description: Devuelve los cambios que apartaste con «Guardar cambios en stash».
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: git stash pop
+    command: git stash pop -q && echo "Cambios recuperados"
+
+- id: copiar-rama
+  category: desarrollo
+  title: Copiar el nombre de la rama
+  description: Copia al portapapeles la rama actual, para pegarla en un ticket o un mensaje.
+  platforms: [linux]
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Copiar rama
+    command: 'b=$(git branch --show-current) && if command -v wl-copy >/dev/null; then printf %s "$b" | wl-copy; else printf %s "$b" | xclip -selection clipboard; fi && echo "Copiado: $b"'
+
+- id: copiar-rama-mac
+  category: desarrollo
+  title: Copiar el nombre de la rama
+  description: Copia al portapapeles la rama actual, para pegarla en un ticket o un mensaje.
+  platforms: [macos]
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Copiar rama
+    command: 'b=$(git branch --show-current) && printf %s "$b" | pbcopy && echo "Copiado: $b"'
+
+- id: ver-en-github
+  category: desarrollo
+  title: Ver el repositorio en GitHub
+  description: Abre en el navegador el repositorio del proyecto. Necesita `gh`.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Ver en GitHub
+    notify: false
+    command: gh browse
+
+- id: checks-del-pr
+  category: desarrollo
+  title: Ver los checks del pull request
+  description: Abre una terminal que sigue la CI del pull request de la rama actual hasta que termine. Necesita `gh`.
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Checks del PR
+    command: gh pr checks --watch
+    terminal: true
+
+- id: liberar-puerto
+  category: desarrollo
+  title: Liberar un puerto
+  description: Detiene el proceso que ocupa el puerto (el servidor que quedó colgado). Hay que pulsar la tecla dos veces.
+  needs:
+    - { key: PUERTO, label: Puerto, default: "3000" }
+  binding:
+    label: Liberar puerto
+    command: 'p=$(lsof -ti tcp:"$PUERTO" -sTCP:LISTEN 2>/dev/null); if [ -n "$p" ]; then kill $p && echo "Puerto $PUERTO liberado"; else echo "Nada usaba el puerto $PUERTO"; fi'
+    confirm: true
+
+- id: revisar-codigo
+  category: desarrollo
+  title: Revisar el código (lint)
+  description: Abre una terminal con el linter del proyecto. Cambia el comando por el tuyo (cargo clippy, ruff check…).
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Lint
+    command: npm run lint
+    terminal: true
+
+- id: construir
+  category: desarrollo
+  title: Construir el proyecto
+  description: Compila el proyecto y te avisa si falló. Cambia el comando por el tuyo (cargo build, make…).
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Build
+    command: npm run build
+
+- id: instalar-dependencias
+  category: desarrollo
+  title: Instalar dependencias
+  description: Abre una terminal que instala las dependencias del proyecto. Cambia el comando por el tuyo (pnpm install, pip install -r requirements.txt…).
+  needs:
+    - { key: cwd, label: Carpeta del proyecto, kind: folder, default: "~/Projects" }
+  binding:
+    label: Instalar dependencias
+    command: npm install
+    terminal: true
 
 # ---------- Sistema ----------
 
@@ -229,3 +513,121 @@
     label: Terminal
     flow:
       - { terminal: "" }
+
+- id: silenciar-microfono
+  category: sistema
+  title: Silenciar el micrófono
+  description: Activa o silencia el micrófono y te avisa cómo quedó. Útil en reuniones.
+  platforms: [linux]
+  binding:
+    label: Micrófono
+    command: 'if command -v wpctl >/dev/null; then wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle && if wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED; then echo "Micrófono silenciado"; else echo "Micrófono activo"; fi; else pactl set-source-mute @DEFAULT_SOURCE@ toggle && if LC_ALL=C pactl get-source-mute @DEFAULT_SOURCE@ | grep -q yes; then echo "Micrófono silenciado"; else echo "Micrófono activo"; fi; fi'
+
+- id: silenciar-microfono-mac
+  category: sistema
+  title: Silenciar el micrófono
+  description: Activa o silencia el micrófono y te avisa cómo quedó. Útil en reuniones.
+  platforms: [macos]
+  binding:
+    label: Micrófono
+    command: 'v=$(osascript -e "input volume of (get volume settings)"); if [ "$v" = 0 ]; then osascript -e "set volume input volume 75"; echo "Micrófono activo"; else osascript -e "set volume input volume 0"; echo "Micrófono silenciado"; fi'
+
+- id: monitor-sistema
+  category: sistema
+  title: Monitor del sistema
+  description: Abre una terminal con el uso de CPU, memoria y procesos (btop, o top si no está).
+  binding:
+    label: Monitor
+    command: 'if command -v btop >/dev/null; then btop; else top; fi'
+    terminal: true
+
+- id: abrir-carpeta
+  category: sistema
+  title: Abrir una carpeta
+  description: Abre la carpeta en el explorador de archivos.
+  needs:
+    - { key: CARPETA, label: Carpeta, kind: folder, default: "~/Downloads" }
+  binding:
+    label: Carpeta
+    notify: false
+    flow:
+      - { open: "$CARPETA" }
+
+- id: buscar-lo-copiado
+  category: sistema
+  title: Buscar lo copiado en la web
+  description: Busca el texto del portapapeles, por ejemplo un mensaje de error. Puedes cambiar el buscador por un traductor.
+  platforms: [linux]
+  needs:
+    - { key: BUSCADOR, label: Buscador (el texto va al final), default: "https://duckduckgo.com/?q=" }
+  binding:
+    label: Buscar lo copiado
+    notify: false
+    command: 'q=$(wl-paste -n 2>/dev/null || xclip -o -selection clipboard) && [ -n "$q" ] && xdg-open "$BUSCADOR$(printf %s "$q" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read()))")"'
+
+- id: buscar-lo-copiado-mac
+  category: sistema
+  title: Buscar lo copiado en la web
+  description: Busca el texto del portapapeles, por ejemplo un mensaje de error. Puedes cambiar el buscador por un traductor.
+  platforms: [macos]
+  needs:
+    - { key: BUSCADOR, label: Buscador (el texto va al final), default: "https://duckduckgo.com/?q=" }
+  binding:
+    label: Buscar lo copiado
+    notify: false
+    command: 'q=$(pbpaste) && [ -n "$q" ] && open "$BUSCADOR$(printf %s "$q" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read()))")"'
+
+- id: selector-color
+  category: sistema
+  title: Selector de color
+  description: Elige un color de la pantalla y copia su código hexadecimal. Necesita hyprpicker (Hyprland/Omarchy).
+  platforms: [linux]
+  binding:
+    label: Color
+    command: hyprpicker -a
+
+- id: copiar-texto-pantalla
+  category: sistema
+  title: Copiar texto de la pantalla (OCR)
+  description: Selecciona una zona y copia el texto que contiene, incluso de imágenes o videos. Solo en Omarchy.
+  platforms: [linux]
+  binding:
+    label: Copiar texto
+    notify: false
+    command: 'if command -v omarchy >/dev/null; then omarchy capture text; else echo "Solo está disponible en Omarchy" >&2; exit 1; fi'
+
+- id: grabar-pantalla
+  category: sistema
+  title: Grabar la pantalla
+  description: Empieza a grabar; pulsa la tecla otra vez para detener. Solo en Omarchy.
+  platforms: [linux]
+  binding:
+    label: Grabar pantalla
+    notify: false
+    single: false
+    command: 'if command -v omarchy >/dev/null; then omarchy capture screenrecording; else echo "Solo está disponible en Omarchy" >&2; exit 1; fi'
+
+- id: conectar-audifonos
+  category: sistema
+  title: Conectar audífonos Bluetooth
+  description: Conecta tus audífonos ya emparejados. Su dirección aparece con `bluetoothctl devices`.
+  platforms: [linux]
+  needs:
+    - { key: DISPOSITIVO, label: Dirección de los audífonos (AA:BB:CC:DD:EE:FF), default: "AA:BB:CC:DD:EE:FF" }
+  binding:
+    label: Audífonos
+    command: bluetoothctl connect "$DISPOSITIVO" | tail -1
+
+- id: suspender
+  category: sistema
+  title: Suspender el equipo
+  description: Hay que pulsar la tecla dos veces en 3 segundos.
+  platforms: [linux]
+  binding: { label: Suspender, command: systemctl suspend, notify: false, confirm: true }
+
+- id: suspender-mac
+  category: sistema
+  title: Suspender el equipo
+  description: Hay que pulsar la tecla dos veces en 3 segundos.
+  platforms: [macos]
+  binding: { label: Suspender, command: pmset sleepnow, notify: false, confirm: true }
